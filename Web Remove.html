@@ -145,22 +145,17 @@
           const [isLoading, setIsLoading] = useState(false);
           const [isSidebarOpen, setIsSidebarOpen] = useState(true);
           
-          // โครงสร้างคอลัมน์แบบไดนามิก
           const [columns, setColumns] = useState([]);
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          
-          // Dashboard Subfolder State
-          const [dashboardView, setDashboardView] = useState('2026'); // overview, 2026, history
+          const [dashboardView, setDashboardView] = useState('2026'); 
 
-          // ตัวกรอง Dashboard
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
           const [selectedStatuses, setSelectedStatuses] = useState([]);
           
-          // States สำหรับ Filter หน้าตาราง
           const [tableFilterTeams, setTableFilterTeams] = useState([]); 
           const [tableFilterCID, setTableFilterCID] = useState('All');
           const [tableFilterDate, setTableFilterDate] = useState('All');
@@ -170,74 +165,19 @@
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
 
-          // ==========================================
-          // FIREBASE REAL-TIME DATABASE INTEGRATION
-          // ==========================================
-          const appId = typeof __app_id !== 'undefined' ? __app_id : 'equip-tracker-app';
-          const [firebaseCtx, setFirebaseCtx] = useState(null);
-          const [user, setUser] = useState(null);
-          const [isDbConnected, setIsDbConnected] = useState(false);
-
+          // โหลดข้อมูลที่เคยบันทึกไว้ใน LocalStorage เมื่อเปิดเว็บครั้งแรก
           useEffect(() => {
-              let unsubscribeAuth = null;
-              const initFirebase = async () => {
-                  try {
-                      // Dynamically load modular Firebase to prevent setup race conditions
-                      const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
-                      const { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
-                      const { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-
-                      const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-                      const app = initializeApp(firebaseConfig);
-                      const auth = getAuth(app);
-                      const db = getFirestore(app);
-
-                      setFirebaseCtx({ auth, db, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, updateDoc });
-
-                      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                          await signInWithCustomToken(auth, __initial_auth_token);
-                      } else {
-                          await signInAnonymously(auth);
-                      }
-
-                      unsubscribeAuth = onAuthStateChanged(auth, setUser);
-                  } catch (e) {
-                      console.error("Firebase Init Error:", e);
-                  }
-              };
-              initFirebase();
-              return () => { if (unsubscribeAuth) unsubscribeAuth(); }
+              const savedTasks = localStorage.getItem('equip_tracker_tasks');
+              const savedCols = localStorage.getItem('equip_tracker_columns');
+              
+              if (savedTasks && savedCols) {
+                  setTasks(JSON.parse(savedTasks));
+                  setColumns(JSON.parse(savedCols));
+              } else {
+                  // ถ้าเพิ่งเปิดครั้งแรก ให้ไปดึงจาก Sheet อัตโนมัติ
+                  fetchGoogleSheet();
+              }
           }, []);
-
-          // Sync Data from Firestore
-          useEffect(() => {
-              if (!user || !firebaseCtx) return;
-              const { db, collection, onSnapshot, doc } = firebaseCtx;
-
-              // 1. ดึงข้อมูล Columns (Metadata)
-              const metaRef = doc(db, 'artifacts', appId, 'public', 'data', 'metadata', 'config');
-              const unsubMeta = onSnapshot(metaRef, (docSnap) => {
-                  if (docSnap.exists() && docSnap.data().columns) {
-                      setColumns(docSnap.data().columns);
-                  }
-              }, (error) => console.error("Meta error", error));
-
-              // 2. ดึงข้อมูลตารางงานทั้งหมดแบบ Real-time
-              const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
-              const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
-                  const fetched = [];
-                  snapshot.forEach(d => fetched.push({ id: d.id, ...d.data() }));
-                  
-                  // จัดเรียงตามลำดับ (ถ้ามี index จากการดึงข้อมูล CSV)
-                  fetched.sort((a, b) => (a._index || 0) - (b._index || 0));
-                  setTasks(fetched);
-                  setIsDbConnected(true);
-              }, (error) => {
-                  console.error("Tasks error", error);
-              });
-
-              return () => { unsubMeta(); unsubTasks(); };
-          }, [user, firebaseCtx]);
 
           // ประมวลผล KeyMap อัตโนมัติเมื่อ Columns เปลี่ยนแปลง
           useEffect(() => {
@@ -264,15 +204,10 @@
 
 
           // ==========================================
-          // นำเข้าข้อมูลจาก Google Sheets (ทับข้อมูลเดิม)
+          // ดึงข้อมูลจาก Google Sheets (ทับข้อมูลเดิมและเซฟลงเครื่อง)
           // ==========================================
-          const importFromCSV = async () => {
+          const fetchGoogleSheet = async () => {
             if (!sheetUrl) return;
-            if (!firebaseCtx || !user) return alert("กรุณารอระบบเชื่อมต่อกับคลาวด์สักครู่");
-            
-            const confirmImport = window.confirm("การดึงข้อมูลจาก Google Sheets จะไปเขียนทับข้อมูลที่มีอยู่บนระบบ Cloud ทั้งหมด! คุณแน่ใจหรือไม่?");
-            if (!confirmImport) return;
-
             setIsLoading(true);
             try {
                 let processUrl = sheetUrl;
@@ -312,35 +247,22 @@
                 Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
-                    complete: async function(results) {
+                    complete: function(results) {
                         const parsedData = results.data;
                         if (parsedData.length > 0) {
-                            const { db, collection, doc, writeBatch, getDocs } = firebaseCtx;
-                            const batch = writeBatch(db);
-                            
-                            // 1. บันทึก Metadata (Columns)
                             const cols = Object.keys(parsedData[0]).filter(k => k.trim() !== '');
-                            const metaRef = doc(db, 'artifacts', appId, 'public', 'data', 'metadata', 'config');
-                            batch.set(metaRef, { columns: cols });
+                            setColumns(cols);
 
-                            // 2. ลบข้อมูลเก่าทั้งหมดทิ้ง
-                            const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
-                            const snapshot = await getDocs(tasksRef);
-                            snapshot.forEach(d => batch.delete(d.ref));
+                            const dataWithId = parsedData.map((row, idx) => ({ ...row, id: `task_${idx}_${Date.now()}`, _index: idx }));
+                            setTasks(dataWithId);
 
-                            // 3. ใส่ข้อมูลใหม่เข้าไป (เพิ่ม _index เพื่อให้เรียงลำดับถูก)
-                            parsedData.forEach((row, idx) => {
-                                const docRef = doc(tasksRef, `task_${idx}_${Date.now()}`);
-                                batch.set(docRef, { ...row, _index: idx });
-                            });
-
-                            await batch.commit();
-                            setIsLoading(false);
-                            alert("นำเข้าข้อมูลและอัปเดตขึ้น Cloud สำเร็จ!");
+                            // บันทึกลง LocalStorage
+                            localStorage.setItem('equip_tracker_tasks', JSON.stringify(dataWithId));
+                            localStorage.setItem('equip_tracker_columns', JSON.stringify(cols));
                         } else {
-                            setIsLoading(false);
-                            alert("ไม่พบข้อมูลในไฟล์ CSV");
+                            setTasks([]);
                         }
+                        setIsLoading(false);
                     },
                     error: function(error) {
                         alert('เกิดข้อผิดพลาดในการอ่านข้อมูล: ' + error.message);
@@ -393,21 +315,12 @@
           };
 
           // ==========================================
-          // แก้ไขเซลล์ (อัปเดตลง Cloud ทันที)
+          // แก้ไขเซลล์ (อัปเดตลง State และ LocalStorage ทันที)
           // ==========================================
-          const handleCellChange = async (id, field, value) => {
-              // 1. อัปเดตหน้าจอทันที (Optimistic update)
-              setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
-              
-              // 2. อัปเดตขึ้น Firestore
-              if (!firebaseCtx || !user) return;
-              const { db, doc, updateDoc } = firebaseCtx;
-              try {
-                  const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', id);
-                  await updateDoc(docRef, { [field]: value });
-              } catch (e) {
-                  console.error("Error updating document in Cloud:", e);
-              }
+          const handleCellChange = (id, field, value) => {
+              const newTasks = tasks.map(task => task.id === id ? { ...task, [field]: value } : task);
+              setTasks(newTasks);
+              localStorage.setItem('equip_tracker_tasks', JSON.stringify(newTasks));
           };
 
           const handleMouseMove = (e, task) => {
@@ -725,25 +638,19 @@
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
                 </nav>
                 <div className="p-4 mt-auto border-t border-slate-800">
-                  <button onClick={importFromCSV} disabled={isLoading || !isDbConnected} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-900/20 whitespace-nowrap">
+                  <button onClick={fetchGoogleSheet} disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-900/20 whitespace-nowrap">
                     {isLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-down"></i>}
-                    <span>นำเข้าข้อมูล (ดึงจาก Sheet)</span>
+                    <span>ดึงข้อมูลล่าสุดจาก Sheet</span>
                   </button>
                 </div>
               </aside>
 
               <main className="flex-1 overflow-y-auto p-4 md:p-8 relative w-full">
                 
-                {/* Header Badge สำหรับแจ้งสถานะ Real-time */}
-                {isDbConnected && (
-                    <div className="absolute top-4 right-8 z-10 flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2 rounded-full border border-emerald-200 shadow-sm animate-in fade-in">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                        </span>
-                        Real-time Cloud Connected
-                    </div>
-                )}
+                <div className="absolute top-4 right-8 z-10 flex items-center gap-2 text-slate-500 text-xs font-bold bg-white px-4 py-2 rounded-full border border-slate-200 shadow-sm animate-in fade-in">
+                    <i className="fa-solid fa-hard-drive"></i>
+                    บันทึกข้อมูลในเครื่องอัตโนมัติ
+                </div>
 
                 {/* --- 1. หน้า Dashboard --- */}
                 {activeTab === 'dashboard' && (
@@ -919,8 +826,8 @@
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {tasks.length === 0 && !isDbConnected ? (
-                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อฐานข้อมูล หรือ ยังไม่มีข้อมูล (กดนำเข้าข้อมูลจาก Sheet ด้านซ้ายล่าง)</td></tr>
+                            {tasks.length === 0 ? (
+                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อ หรือ ยังไม่มีข้อมูล (กดปุ่มดึงข้อมูลซ้ายล่าง)</td></tr>
                             ) : tableTasks.length === 0 ? (
                                 <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
                             ) : tableTasks.map((task) => (
@@ -981,7 +888,7 @@
                               <i className="fa-solid fa-list-check"></i>
                               แสดงผลทั้งหมด {tableTasks.length} รายการ
                           </div>
-                          <div className="text-xs text-slate-400">บันทึกอัตโนมัติบน Cloud</div>
+                          <div className="text-xs text-slate-400">บันทึกอัตโนมัติในเครื่อง (Local Storage)</div>
                       </div>
                     </div>
                   </div>
