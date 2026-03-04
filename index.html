@@ -163,6 +163,7 @@
           const [tableFilterDate, setTableFilterDate] = useState('All');
           const [tableFilterYear, setTableFilterYear] = useState('All');
           const [tableFilterStatus, setTableFilterStatus] = useState('All');
+          const [tableFilterOverdue, setTableFilterOverdue] = useState('All');
           const [searchTerm, setSearchTerm] = useState('');
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
@@ -410,6 +411,7 @@
           const uniqueDates = dateCol ? [...new Set(tasks.map(t => t[dateCol] ? String(t[dateCol]).trim() : '').filter(Boolean))].sort() : [];
           const uniqueYears = equipYearCol ? [...new Set(tasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
           const uniqueStatuses = statusCol ? [...new Set(tasks.map(t => getCleanStatus(t[statusCol])))].sort() : [];
+          const uniqueOverdueStatus = overDueCol ? [...new Set(tasks.map(t => t[overDueCol] ? String(t[overDueCol]).trim() : '').filter(Boolean))].sort() : [];
 
           const getStatusColor = (status, opacity = 1) => {
               const s = status ? String(status).trim().toLowerCase() : '';
@@ -626,6 +628,7 @@
           if (tableFilterDate !== 'All' && dateCol) tableTasks = tableTasks.filter(t => (t[dateCol] ? String(t[dateCol]).trim() : '') === tableFilterDate);
           if (tableFilterYear !== 'All' && equipYearCol) tableTasks = tableTasks.filter(t => (t[equipYearCol] ? String(t[equipYearCol]).trim() : '') === tableFilterYear);
           if (tableFilterStatus !== 'All' && statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[statusCol]) === tableFilterStatus);
+          if (tableFilterOverdue !== 'All' && overDueCol) tableTasks = tableTasks.filter(t => (t[overDueCol] ? String(t[overDueCol]).trim() : '') === tableFilterOverdue);
           
           if (searchTerm) {
               const lowerSearch = searchTerm.toLowerCase();
@@ -914,6 +917,12 @@
                                 <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
                                     <option value="All">Status (ทั้งหมด)</option>
                                     {uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            )}
+                            {overDueCol && (
+                                <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
+                                    <option value="All">เกินกำหนด (ทั้งหมด)</option>
+                                    {uniqueOverdueStatus.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             )}
                         </div>
@@ -1215,4 +1224,3 @@
     </script>
 </body>
 </html>
-
