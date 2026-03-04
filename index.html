@@ -152,7 +152,7 @@
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('2026'); 
+          const [dashboardView, setDashboardView] = useState('overview'); 
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -327,18 +327,60 @@
           };
 
           // ==========================================
-          // แก้ไขเซลล์ (อัปเดตลง State และ LocalStorage ทันที)
+          // ฟังก์ชันอัปเดตข้อมูลกลับไปยัง Google Sheet (API)
+          // ==========================================
+          // *** เปลี่ยน URL ด้านล่างนี้เป็น Web App URL ที่คุณได้จาก Step 2 ***
+          const SCRIPT_URL = 'https://script.google.com/macros/s/ใส่_URL_ของคุณตรงนี้/exec'; 
+
+          const updateGoogleSheet = async (id, field, value) => {
+              if (SCRIPT_URL.includes('ใส่_URL_ของคุณตรงนี้')) {
+                  console.warn("ยังไม่ได้ตั้งค่า SCRIPT_URL ข้อมูลจะไม่ถูกส่งไป Google Sheet");
+                  return;
+              }
+
+              try {
+                  const response = await fetch(SCRIPT_URL, {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'text/plain;charset=utf-8', // แฮ็กเพื่อเลี่ยง CORS ของ Google Script
+                      },
+                      // ส่ง ID ของแถวที่แก้, ชื่อคอลัมน์ที่แก้, และค่าใหม่
+                      body: JSON.stringify({ id: id, [field]: value }) 
+                  });
+                  
+                  const result = await response.json();
+                  if (result.status === 'success') {
+                      console.log('อัปเดตลง Sheet สำเร็จ:', result.message);
+                      // เพิ่มการแจ้งเตือนชั่วคราวเล็กๆ ว่า "บันทึกแล้ว" ได้ถ้าต้องการ
+                  } else {
+                      console.error('อัปเดตลง Sheet ไม่สำเร็จ:', result.message);
+                  }
+              } catch (error) {
+                  console.error('Error calling Google Script:', error);
+              }
+          };
+
+          // ==========================================
+          // แก้ไขเซลล์ (อัปเดต State, LocalStorage และยิง API ไป Sheet)
           // ==========================================
           const handleCellChange = (id, field, value) => {
+              // 1. อัปเดตหน้าจอทันที (State)
               const newTasks = tasks.map(task => task.id === id ? { ...task, [field]: value } : task);
               setTasks(newTasks);
               
-              // เซฟลงเครื่องแบบปลอดภัย
+              // 2. เซฟลงเครื่อง (LocalStorage)
               try {
                   localStorage.setItem('equip_tracker_tasks', JSON.stringify(newTasks));
               } catch (e) {
                   console.warn("ไม่สามารถบันทึกลงเครื่องได้ชั่วคราว");
               }
+
+              // 3. ยิงข้อมูลไปอัปเดตที่ Google Sheet
+              // (หน่วงเวลาไว้เล็กน้อย เพื่อไม่ให้ยิงรัวเกินไปถ้าพิมพ์เร็วๆ - Debounce)
+              if (window.updateTimeout) clearTimeout(window.updateTimeout);
+              window.updateTimeout = setTimeout(() => {
+                  updateGoogleSheet(id, field, value);
+              }, 1000); // รอ 1 วินาทีหลังพิมพ์เสร็จถึงส่งข้อมูล
           };
 
           const handleMouseMove = (e, task) => {
@@ -452,14 +494,41 @@
                   statusCounts[s] = (statusCounts[s] || 0) + 1;
               });
           }
-          const sortedStatuses = Object.keys(statusCounts).sort((a, b) => statusCounts[b] - statusCounts[a]);
+
+          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว
+          const getStatusRank = (status) => {
+              const s = String(status).trim().toLowerCase();
+              if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
+              if (s.includes('รอเข้าเก็บ')) return 2;
+              if (s.includes('รอลูกค้า')) return 3;
+              if (s.includes('รอเซลล์') || s.includes('รอ sale') || s.includes('รอเซล')) return 4;
+              if (s.includes('รอนัด')) return 5;
+              if (s.includes('รอ sub') || s.includes('รอsub')) return 6;
+              if (s.includes('รอ')) return 7; 
+              if (s.includes('ไม่พบ') || s.includes('หาย')) return 8;
+              if (s.includes('เลื่อน')) return 9;
+              if (s.includes('ยกเลิก') || s.includes('cancel')) return 10;
+              return 99; // สถานะอื่นๆ ไว้ท้ายสุด
+          };
+
+          const sortedStatuses = Object.keys(statusCounts).sort((a, b) => {
+              const rankA = getStatusRank(a);
+              const rankB = getStatusRank(b);
+              if (rankA !== rankB) return rankA - rankB; // เรียงตาม Rank ก่อน
+              return statusCounts[b] - statusCounts[a]; // ถ้า Rank เท่ากัน ให้เรียงตามจำนวน
+          });
 
           const chartStatusCounts = {};
           chartFilteredTasks.forEach(t => {
               const s = getCleanStatus(t[statusCol]);
               chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1;
           });
-          const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => chartStatusCounts[b] - chartStatusCounts[a]);
+          const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => {
+              const rankA = getStatusRank(a);
+              const rankB = getStatusRank(b);
+              if (rankA !== rankB) return rankA - rankB;
+              return chartStatusCounts[b] - chartStatusCounts[a];
+          });
 
           const statusChartData = {
               labels: chartSortedStatuses,
@@ -540,6 +609,50 @@
               responsive: true, maintainAspectRatio: false,
               plugins: { 
                   legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } },
+                  tooltip: { mode: 'index', intersect: false },
+                  datalabels: {
+                      color: '#ffffff', font: { weight: 'bold', size: 10 }, anchor: 'center', align: 'center',
+                      display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
+                  }
+              },
+              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 } } }
+          };
+
+          // --- คำนวณกราฟงานเกินกำหนดแยกตามทีม ---
+          const overdueByTeamCounts = {};
+          activeTeams.forEach(team => overdueByTeamCounts[team] = 0);
+
+          chartFilteredTasks.forEach(t => {
+              const team = getCleanTeam(t[teamCol]);
+              const overDueVal = overDueCol ? getCleanStatus(t[overDueCol]) : '';
+              if (overDueVal) {
+                  let num = NaN;
+                  const match = overDueVal.match(/-?\d+/);
+                  if(match) num = parseInt(match[0], 10);
+                  
+                  // นับเฉพาะที่เกินกำหนด (มีคำว่าเกิน, over หรือตัวเลขน้อยกว่า 0)
+                  if (overDueVal.includes('เกิน') || overDueVal.includes('over') || num < 0) {
+                      overdueByTeamCounts[team]++;
+                  }
+              }
+          });
+
+          const overdueChartData = {
+              labels: activeTeams,
+              datasets: [{
+                  label: 'เกินกำหนด (Sites)',
+                  data: activeTeams.map(team => overdueByTeamCounts[team]),
+                  backgroundColor: 'rgba(239, 68, 68, 0.8)', // สีแดง
+                  borderColor: 'rgba(220, 38, 38, 1)',
+                  borderWidth: 1,
+                  borderRadius: 4
+              }]
+          };
+
+          const overdueChartOptions = {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { 
+                  legend: { display: false }, // ปิด Legend เพราะมีแค่แท่งสีเดียว
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
                       color: '#ffffff', font: { weight: 'bold', size: 10 }, anchor: 'center', align: 'center',
@@ -753,379 +866,4 @@
                         </div>
 
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> สรุปการจัดเก็บรายเดือน {dashboardView !== 'overview' && `(${dashboardView === 'history' ? '2018-2025' : dashboardView})`}</h3>
-                            <div className="relative h-72 w-full">
-                                <ChartComponent type="bar" data={monthlyChartData} options={monthlyChartOptions} />
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-3">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม (Subcontract)</h3>
-                            </div>
-                            <div className="relative h-80 w-full overflow-x-auto custom-scrollbar pb-2">
-                                <div className="min-w-[800px] h-full">
-                                    {chartFilteredTasks.length > 0 ? (
-                                        <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} />
-                                    ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* --- 2. หน้าตารางงาน --- */}
-                {activeTab === 'tasks' && (
-                  <div className="max-w-full mx-auto space-y-4 animate-in fade-in duration-500 pt-8 md:pt-0">
-                    <header className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
-                            <i className="fa-solid fa-bars"></i>
-                        </button>
-                        <div>
-                            <h2 className="text-3xl font-bold text-slate-900">ข้อมูลตารางงานทั้งหมด</h2>
-                        </div>
-                      </div>
-                    </header>
-
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
-                        <div className="flex flex-wrap md:flex-nowrap items-center gap-4">
-                            <div className="relative flex-1">
-                                <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                <input type="text" placeholder="พิมพ์คำค้นหา (ค้นหาได้ทุกคอลัมน์)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
-                            </div>
-                            <div className="flex-1 max-w-sm flex items-center gap-2">
-                                <i className="fa-solid fa-file-excel text-green-600 text-xl shrink-0"></i>
-                                <input type="text" placeholder="ลิงก์ Google Sheets (CSV)..." className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 outline-none text-xs" value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} />
-                            </div>
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-100">
-                            <span className="text-sm font-semibold text-slate-600"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
-                            {teamCol && (
-                                <MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" />
-                            )}
-                            {cidCol && (
-                                <select value={tableFilterCID} onChange={e => setTableFilterCID(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
-                                    <option value="All">CID (ทั้งหมด)</option>
-                                    {uniqueCIDs.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            )}
-                            {dateCol && (
-                                <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
-                                    <option value="All">วันที่เข้าเก็บ (ทั้งหมด)</option>
-                                    {uniqueDates.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            )}
-                            {equipYearCol && (
-                                <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
-                                    <option value="All">ปี Equipment (ทั้งหมด)</option>
-                                    {uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            )}
-                            {statusCol && (
-                                <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
-                                    <option value="All">Status (ทั้งหมด)</option>
-                                    {uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                      <div className="overflow-x-auto table-container max-h-[50vh]">
-                        <table className="w-full text-left border-collapse min-w-max text-sm">
-                          <thead className="sticky top-0 z-10">
-                            <tr className="bg-slate-800 text-white">
-                              {columns.map((col, idx) => (
-                                  <th key={idx} className="p-3 text-sm font-semibold whitespace-nowrap border-r border-slate-700">{col}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200">
-                            {tasks.length === 0 ? (
-                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อ หรือ ยังไม่มีข้อมูล (กดปุ่มดึงข้อมูลซ้ายล่าง)</td></tr>
-                            ) : tableTasks.length === 0 ? (
-                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
-                            ) : tableTasks.map((task) => (
-                              <tr key={task.id} className="hover:bg-slate-50 transition-colors">
-                                {columns.map((col, idx) => {
-                                    const isStatusCell = col === statusCol;
-                                    const isTeamCell = col === teamCol;
-                                    const isOverDueCell = col === overDueCol; 
-                                    
-                                    const val = task[col] || '';
-                                    const cleanVal = getCleanStatus(val);
-                                    let cellStyle = "editable-cell text-sm";
-                                    let styleObj = {};
-                                    
-                                    if (isStatusCell) {
-                                        const color = getStatusColor(cleanVal, 0.1);
-                                        const textColor = getStatusColor(cleanVal, 1);
-                                        styleObj = { backgroundColor: color, color: textColor, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                    } else if (isTeamCell) {
-                                        const tColor = getTeamColorStyle(val);
-                                        styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                    } else if (isOverDueCell && cleanVal) {
-                                        let num = NaN;
-                                        const match = cleanVal.match(/-?\d+/);
-                                        if(match) num = parseInt(match[0], 10);
-
-                                        if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) {
-                                            styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                        } else if (num === 0 || cleanVal.includes('ครบกำหนด')) {
-                                            styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
-                                        } else if (num > 0 || cleanVal.includes('เหลือ')) {
-                                            styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                        }
-                                    }
-
-                                    return (
-                                        <td key={idx} className="p-2 align-top border-r border-slate-100">
-                                            <div 
-                                                contentEditable="true"
-                                                suppressContentEditableWarning={true}
-                                                className={cellStyle + " break-words whitespace-pre-wrap leading-relaxed"} 
-                                                style={{ ...styleObj, minHeight: '32px', cursor: 'text' }}
-                                                onBlur={e => handleCellChange(task.id, col, e.target.innerText)} 
-                                            >
-                                                {val}
-                                            </div>
-                                        </td>
-                                    )
-                                })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      <div className="bg-slate-50 border-t border-slate-200 p-3 px-5 flex items-center justify-between">
-                          <div className="text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
-                              <i className="fa-solid fa-list-check"></i>
-                              แสดงผลทั้งหมด {tableTasks.length} รายการ
-                          </div>
-                          <div className="text-xs text-slate-400">บันทึกอัตโนมัติในเครื่อง (Local Storage)</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* --- 3. หน้าปฏิทิน --- */}
-                {activeTab === 'calendar' && (
-                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 pt-8 md:pt-0">
-                    <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-8">
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
-                            <i className="fa-solid fa-bars"></i>
-                        </button>
-                        <div>
-                            <h2 className="text-3xl font-bold text-slate-900">ปฏิทิน (Calendar)</h2>
-                            <p className="text-slate-500 mt-1">ข้อมูลจะดึงมาจากตารางงานอัตโนมัติ ชี้ที่นัดหมายเพื่อดูรายละเอียด</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-3">
-                        <div className="flex bg-slate-200 p-1 rounded-lg">
-                          <button onClick={() => setCalendarView('day')} className={`px-4 py-1.5 text-sm font-semibold rounded-md ${calendarView === 'day' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>รายวัน</button>
-                          <button onClick={() => setCalendarView('week')} className={`px-4 py-1.5 text-sm font-semibold rounded-md ${calendarView === 'week' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>รายสัปดาห์</button>
-                          <button onClick={() => setCalendarView('month')} className={`px-4 py-1.5 text-sm font-semibold rounded-md ${calendarView === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>รายเดือน</button>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <h3 className="text-xl font-bold text-blue-700 min-w-[180px] text-right">
-                            {calendarView === 'month' && `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
-                            {calendarView === 'week' && `สัปดาห์ที่ ${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
-                            {calendarView === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
-                          </h3>
-                          <div className="flex gap-1">
-                            <button onClick={() => navigateCalendar(-1)} className="p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-left"></i></button>
-                            <button onClick={() => setCurrentDate(new Date())} className="px-3 bg-white border rounded-lg hover:bg-slate-50 text-sm font-bold">วันนี้</button>
-                            <button onClick={() => navigateCalendar(1)} className="p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-right"></i></button>
-                          </div>
-                        </div>
-                      </div>
-                    </header>
-
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                      {calendarView === 'month' && (
-                        <div className="grid grid-cols-7 gap-px bg-slate-200">
-                          {['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'].map(d => (
-                            <div key={d} className="bg-slate-50 py-3 text-center text-sm font-semibold text-slate-600">{d}</div>
-                          ))}
-                          {monthSlots.map((dateObj, idx) => {
-                            const dayTasks = getTasksForDateObj(dateObj);
-                            return (
-                              <div key={idx} className="bg-white min-h-[140px] p-2 flex flex-col">
-                                {dateObj && (
-                                  <>
-                                    <div className="text-right mb-1">
-                                      <span 
-                                        onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
-                                        title="คลิกเพื่อดูรายละเอียดรายวัน"
-                                        className={`inline-block w-7 h-7 leading-7 text-center rounded-full text-sm font-semibold cursor-pointer hover:scale-110 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 bg-slate-100 hover:bg-blue-100 hover:text-blue-700 transition-all'}`}
-                                      >
-                                        {dateObj.getDate()}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1 space-y-1.5 overflow-y-auto max-h-[120px] table-container pr-1">
-                                      {dayTasks.map(t => {
-                                          const bg = getStatusColor(t[statusCol] || '', 0.1);
-                                          const border = getStatusColor(t[statusCol] || '', 1);
-                                          return (
-                                            <div key={t.id} style={{backgroundColor: bg, borderColor: border}} className="p-1.5 rounded-lg border-l-4 shadow-sm text-xs space-y-0.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
-                                              {compCol && <div className="font-bold text-slate-800 truncate" title={t[compCol]}>{t[compCol]}</div>}
-                                              {keyMap.colB && <div className="text-[10px] text-slate-600 truncate">{t[keyMap.colB]}</div>}
-                                              <div className="text-[10px] font-semibold mt-1 truncate" style={{color: border}}>[{t[statusCol]}]</div>
-                                            </div>
-                                          );
-                                      })}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {calendarView === 'week' && (
-                        <div className="grid grid-cols-7 gap-px bg-slate-200">
-                          {weekSlots.map((dateObj, idx) => (
-                            <div key={idx} className="bg-slate-50 py-3 text-center border-b border-slate-200">
-                              <div className="text-sm font-semibold text-slate-500">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][dateObj.getDay()]}</div>
-                              <div 
-                                onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
-                                title="คลิกเพื่อดูรายละเอียดรายวัน"
-                                className={`text-2xl font-bold mt-1 cursor-pointer transition-colors inline-block px-3 py-1 rounded-lg hover:bg-blue-100 hover:text-blue-700 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'text-blue-600' : 'text-slate-800'}`}
-                              >
-                                {dateObj.getDate()}
-                              </div>
-                            </div>
-                          ))}
-                          {weekSlots.map((dateObj, idx) => {
-                            const dayTasks = getTasksForDateObj(dateObj);
-                            return (
-                              <div key={`w-${idx}`} className="bg-white min-h-[500px] p-2 flex flex-col gap-2 bg-slate-50/50">
-                                {dayTasks.map(t => {
-                                    const border = getStatusColor(t[statusCol] || '', 1);
-                                    const softBg = getStatusColor(t[statusCol] || '', 0.1);
-                                    return (
-                                      <div key={t.id} style={{borderLeftColor: border}} className="p-3 rounded-xl border border-l-4 shadow-sm bg-white text-[10px] md:text-xs space-y-1.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
-                                        {compCol && <div className="font-bold text-slate-800 break-words leading-tight">{t[compCol]}</div>}
-                                        {keyMap.colB && <div className="text-slate-500 font-medium">{keyMap.colB}: {t[keyMap.colB]}</div>}
-                                        {keyMap.colD && <div className="text-slate-500 truncate">{keyMap.colD}: {t[keyMap.colD]}</div>}
-                                        <div className="flex items-center gap-1 text-slate-500 font-medium bg-slate-50 p-1 rounded">
-                                            <i className="fa-regular fa-clock"></i> {t[timeCol] || '-'}
-                                        </div>
-                                        <div className="mt-2 text-center font-bold px-2 py-1 rounded-lg border" style={{backgroundColor: softBg, color: border, borderColor: border}}>{t[statusCol]}</div>
-                                      </div>
-                                    )
-                                })}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {calendarView === 'day' && (() => {
-                        const dayTasks = getTasksForDateObj(currentDate);
-                        return (
-                          <div className="p-6 bg-white min-h-[500px]">
-                            <h4 className="text-lg font-bold text-slate-800 mb-6 border-b pb-4 flex justify-between items-center">
-                              <span><i className="fa-regular fa-calendar-check text-blue-600 mr-2"></i> ตารางงานประจำวัน</span>
-                              <span className="text-sm font-medium bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full shadow-sm">{dayTasks.length} งาน</span>
-                            </h4>
-                            {dayTasks.length === 0 ? (
-                              <div className="text-center text-slate-400 py-20 flex flex-col items-center">
-                                  <i className="fa-regular fa-calendar-xmark text-6xl mb-4 text-slate-200"></i>
-                                  <p className="text-lg font-medium">ไม่มีงานที่ต้องดำเนินการในวันนี้</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                {dayTasks.map(t => {
-                                    const bgColor = getStatusColor(t[statusCol] || '', 1);
-                                    const softBg = getStatusColor(t[statusCol] || '', 0.1);
-                                    return (
-                                      <div key={t.id} className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
-                                        <div style={{backgroundColor: bgColor}} className="w-3 shrink-0"></div>
-                                        <div className="p-5 flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-center text-sm">
-                                          {keyMap.colB && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colB}</p><p className="font-bold text-slate-800 truncate text-base">{t[keyMap.colB] || '-'}</p></div>}
-                                          {compCol && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{compCol}</p><p className="font-bold text-slate-800 truncate text-base">{t[compCol] || '-'}</p></div>}
-                                          {keyMap.colD && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colD}</p><p className="text-slate-700 truncate">{t[keyMap.colD] || '-'}</p></div>}
-                                          {keyMap.colE && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colE}</p><p className="text-slate-700 truncate">{t[keyMap.colE] || '-'}</p></div>}
-                                          {keyMap.colF && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colF}</p><p className="text-slate-700 truncate">{t[keyMap.colF] || '-'}</p></div>}
-                                          {keyMap.colG && <div><p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colG}</p><p className="text-slate-700 font-bold bg-slate-100 px-2 py-1 rounded inline-block mt-1">{t[keyMap.colG] || '-'}</p></div>}
-                                          <div className="col-span-2 md:col-span-3 lg:col-span-2 flex justify-end mt-2 md:mt-0">
-                                              <span style={{backgroundColor: softBg, color: bgColor, borderColor: bgColor}} className="font-bold px-6 py-2 rounded-xl border-2 text-center min-w-[160px] shadow-sm">
-                                                  {t[statusCol] || 'ไม่มีสถานะ'}
-                                              </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </main>
-
-              {/* Tooltip Component */}
-              {tooltipData.visible && tooltipData.task && (
-                <div className="fixed z-[9999] bg-white p-5 rounded-2xl shadow-2xl border border-slate-200 w-80 pointer-events-none transition-opacity duration-150" style={{ left: tooltipData.x, top: tooltipData.y }}>
-                    <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
-                        <h4 className="font-bold text-slate-800 text-base break-words pr-2 leading-snug">{tooltipData.task[compCol] || 'ไม่ระบุองค์กร/บริษัท'}</h4>
-                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg whitespace-nowrap" style={{ backgroundColor: getTeamColorStyle(tooltipData.task[teamCol]).bg, color: getTeamColorStyle(tooltipData.task[teamCol]).text }}>
-                            {tooltipData.task[teamCol] || 'ไม่ระบุทีม'}
-                        </span>
-                    </div>
-                    
-                    <div className="flex justify-between items-center mb-3 pb-3 border-b border-slate-200 border-dashed">
-                        <div>
-                            <span className="font-semibold text-slate-500 text-[10px] block uppercase tracking-wider">วันที่ และ เวลา:</span>
-                            <span className="text-emerald-600 text-sm font-bold flex items-center gap-1.5 mt-1">
-                                <i className="fa-regular fa-calendar-check"></i> {tooltipData.task[dateCol] || '-'} 
-                                <span className="text-slate-500 mx-1">|</span> 
-                                <i className="fa-regular fa-clock"></i> {tooltipData.task[timeCol] || '-'}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3 text-xs text-slate-600 max-h-[300px] overflow-y-auto pr-1 table-container">
-                        {columns.map(col => {
-                            if (skipColsInTooltip.includes(col)) return null;
-                            const val = tooltipData.task[col];
-                            if (!val || String(val).trim() === '') return null;
-                            if (String(val).includes('@') && String(val).includes('.')) return null;
-
-                            const isStatus = col === statusCol;
-                            const isNote = col === noteCol;
-
-                            return (
-                                <div key={col} className={`flex flex-col ${isNote ? 'bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-3' : ''}`}>
-                                    <span className={`font-semibold text-[10px] uppercase tracking-wider ${isNote ? 'text-amber-700' : 'text-slate-400'}`}>{col}</span>
-                                    {isStatus ? (
-                                        <span className="inline-block mt-1 px-3 py-1 rounded-lg font-bold border" style={{ backgroundColor: getStatusColor(val, 0.2), color: getStatusColor(val, 1), borderColor: getStatusColor(val, 1), width: 'fit-content' }}>{val}</span>
-                                    ) : (
-                                        <span className={`text-slate-800 break-words whitespace-pre-wrap mt-0.5 ${isNote ? 'font-medium leading-relaxed' : ''}`}>{val}</span>
-                                    )}
-                                </div>
-                            )
-                        })}
-                    </div>
-                </div>
-              )}
-
-            </div>
-          );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                            <h3 className="text-lg font-bold mb-4 flex items-
