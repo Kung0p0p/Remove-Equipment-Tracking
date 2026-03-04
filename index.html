@@ -362,7 +362,8 @@
           const cidCol = columns.find(c => c.toLowerCase().includes('cid')) || '';
           const equipYearCol = columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')) || '';
           const noteCol = columns.find(c => c.includes('หมายเหตุ') || c.toLowerCase().includes('note')) || '';
-          const overDueCol = columns.find(c => c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')) || '';
+          // แก้ไขการดึงคอลัมน์โดยอิงจากคำว่า "นัดหมายลูกค้า" เป็นหลัก
+          const overDueCol = columns.find(c => c.includes('นัดหมายลูกค้า') || c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')) || '';
 
           const uniqueTeams = teamCol ? [...new Set(tasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
           
@@ -700,7 +701,8 @@
               columns.find(c => c.toLowerCase().includes('แจ้ง subcontract') || c.includes('แจ้ง Sub')),
               columns.find(c => c.toLowerCase().includes('อีเมล') || c.toLowerCase().includes('email') || c.toLowerCase().includes('mail')),
               columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')),
-              columns.find(c => c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')),
+              // ซ่อนคอลัมน์ นัดหมายลูกค้า ออกจาก Tooltip เพื่อไม่ให้รก
+              columns.find(c => c.includes('นัดหมายลูกค้า') || c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')),
               columns.find(c => c.includes('วันที่โทร') || c.includes('โทรติดต่อ'))
           ].filter(Boolean);
 
@@ -921,7 +923,7 @@
                             )}
                             {overDueCol && (
                                 <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
-                                    <option value="All">เกินกำหนด (ทั้งหมด)</option>
+                                    <option value="All">นัดหมายลูกค้า (ทั้งหมด)</option>
                                     {uniqueOverdueStatus.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             )}
