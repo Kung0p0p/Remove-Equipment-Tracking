@@ -59,8 +59,10 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // ลงทะเบียนปลั๊กอินแสดงตัวเลขในกราฟ
-        Chart.register(ChartDataLabels);
+        // ลงทะเบียนปลั๊กอินแสดงตัวเลขในกราฟแบบปลอดภัย (ป้องกันระบบค้างถ้าโหลดเน็ตเวิร์คไม่ทัน)
+        if (typeof ChartDataLabels !== 'undefined') {
+            Chart.register(ChartDataLabels);
+        }
 
         const { useState, useEffect, useRef } = React;
 
@@ -165,16 +167,22 @@
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
 
-          // โหลดข้อมูลที่เคยบันทึกไว้ใน LocalStorage เมื่อเปิดเว็บครั้งแรก
+          // โหลดข้อมูลที่เคยบันทึกไว้ใน LocalStorage (Safe Mode ป้องกันหน้าจอขาว)
           useEffect(() => {
-              const savedTasks = localStorage.getItem('equip_tracker_tasks');
-              const savedCols = localStorage.getItem('equip_tracker_columns');
-              
-              if (savedTasks && savedCols) {
-                  setTasks(JSON.parse(savedTasks));
-                  setColumns(JSON.parse(savedCols));
-              } else {
-                  // ถ้าเพิ่งเปิดครั้งแรก ให้ไปดึงจาก Sheet อัตโนมัติ
+              try {
+                  const savedTasks = localStorage.getItem('equip_tracker_tasks');
+                  const savedCols = localStorage.getItem('equip_tracker_columns');
+                  
+                  if (savedTasks && savedCols) {
+                      setTasks(JSON.parse(savedTasks));
+                      setColumns(JSON.parse(savedCols));
+                  } else {
+                      // ถ้าเพิ่งเปิดครั้งแรก ให้ไปดึงจาก Sheet อัตโนมัติ
+                      fetchGoogleSheet();
+                  }
+              } catch (error) {
+                  // หากเบราว์เซอร์บล็อก LocalStorage ให้ดึงข้อมูลใหม่โดยไม่ค้าง
+                  console.warn("ระบบเซฟข้อมูลถูกบล็อก ระบบจะดึงข้อมูลใหม่จาก Sheet โดยตรง");
                   fetchGoogleSheet();
               }
           }, []);
@@ -256,9 +264,13 @@
                             const dataWithId = parsedData.map((row, idx) => ({ ...row, id: `task_${idx}_${Date.now()}`, _index: idx }));
                             setTasks(dataWithId);
 
-                            // บันทึกลง LocalStorage
-                            localStorage.setItem('equip_tracker_tasks', JSON.stringify(dataWithId));
-                            localStorage.setItem('equip_tracker_columns', JSON.stringify(cols));
+                            // บันทึกลง LocalStorage แบบปลอดภัย
+                            try {
+                                localStorage.setItem('equip_tracker_tasks', JSON.stringify(dataWithId));
+                                localStorage.setItem('equip_tracker_columns', JSON.stringify(cols));
+                            } catch (e) {
+                                console.warn("ไม่สามารถบันทึกลงเครื่องได้ชั่วคราว");
+                            }
                         } else {
                             setTasks([]);
                         }
@@ -320,7 +332,13 @@
           const handleCellChange = (id, field, value) => {
               const newTasks = tasks.map(task => task.id === id ? { ...task, [field]: value } : task);
               setTasks(newTasks);
-              localStorage.setItem('equip_tracker_tasks', JSON.stringify(newTasks));
+              
+              // เซฟลงเครื่องแบบปลอดภัย
+              try {
+                  localStorage.setItem('equip_tracker_tasks', JSON.stringify(newTasks));
+              } catch (e) {
+                  console.warn("ไม่สามารถบันทึกลงเครื่องได้ชั่วคราว");
+              }
           };
 
           const handleMouseMove = (e, task) => {
