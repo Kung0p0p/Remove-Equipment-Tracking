@@ -168,15 +168,111 @@
           const [tableFilterStatus, setTableFilterStatus] = useState('All');
           const [searchTerm, setSearchTerm] = useState('');
 
-          // State สำหรับ Tooltip
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
 
+          // ==========================================
+          // FIREBASE REAL-TIME DATABASE INTEGRATION
+          // ==========================================
+          const appId = typeof __app_id !== 'undefined' ? __app_id : 'equip-tracker-app';
+          const [firebaseCtx, setFirebaseCtx] = useState(null);
+          const [user, setUser] = useState(null);
+          const [isDbConnected, setIsDbConnected] = useState(false);
+
           useEffect(() => {
-            fetchGoogleSheet();
+              let unsubscribeAuth = null;
+              const initFirebase = async () => {
+                  try {
+                      // Dynamically load modular Firebase to prevent setup race conditions
+                      const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+                      const { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+                      const { getFirestore, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, updateDoc } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+
+                      const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                      const app = initializeApp(firebaseConfig);
+                      const auth = getAuth(app);
+                      const db = getFirestore(app);
+
+                      setFirebaseCtx({ auth, db, collection, doc, setDoc, getDocs, onSnapshot, writeBatch, updateDoc });
+
+                      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                          await signInWithCustomToken(auth, __initial_auth_token);
+                      } else {
+                          await signInAnonymously(auth);
+                      }
+
+                      unsubscribeAuth = onAuthStateChanged(auth, setUser);
+                  } catch (e) {
+                      console.error("Firebase Init Error:", e);
+                  }
+              };
+              initFirebase();
+              return () => { if (unsubscribeAuth) unsubscribeAuth(); }
           }, []);
 
-          const fetchGoogleSheet = async () => {
+          // Sync Data from Firestore
+          useEffect(() => {
+              if (!user || !firebaseCtx) return;
+              const { db, collection, onSnapshot, doc } = firebaseCtx;
+
+              // 1. ดึงข้อมูล Columns (Metadata)
+              const metaRef = doc(db, 'artifacts', appId, 'public', 'data', 'metadata', 'config');
+              const unsubMeta = onSnapshot(metaRef, (docSnap) => {
+                  if (docSnap.exists() && docSnap.data().columns) {
+                      setColumns(docSnap.data().columns);
+                  }
+              }, (error) => console.error("Meta error", error));
+
+              // 2. ดึงข้อมูลตารางงานทั้งหมดแบบ Real-time
+              const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+              const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
+                  const fetched = [];
+                  snapshot.forEach(d => fetched.push({ id: d.id, ...d.data() }));
+                  
+                  // จัดเรียงตามลำดับ (ถ้ามี index จากการดึงข้อมูล CSV)
+                  fetched.sort((a, b) => (a._index || 0) - (b._index || 0));
+                  setTasks(fetched);
+                  setIsDbConnected(true);
+              }, (error) => {
+                  console.error("Tasks error", error);
+              });
+
+              return () => { unsubMeta(); unsubTasks(); };
+          }, [user, firebaseCtx]);
+
+          // ประมวลผล KeyMap อัตโนมัติเมื่อ Columns เปลี่ยนแปลง
+          useEffect(() => {
+              if (columns.length > 0) {
+                  const findCol = (keywords) => columns.find(c => keywords.some(kw => c.toLowerCase().includes(kw.toLowerCase()))) || '';
+                  const colB = columns.length > 1 ? columns[1] : '';
+                  const colC = columns.length > 2 ? columns[2] : '';
+                  const colD = columns.length > 3 ? columns[3] : '';
+                  const colE = columns.length > 4 ? columns[4] : '';
+                  const colF = columns.length > 5 ? columns[5] : '';
+                  const colG = columns.length > 6 ? columns[6] : '';
+                  const statusCol = findCol(['สถานะ', 'status']) || columns[columns.length - 1] || '';
+
+                  setKeyMap({
+                      colB, colC, colD, colE, colF, colG,
+                      date: colF || columns[0],
+                      status: statusCol,
+                      team: colB || findCol(['ทีม', 'subcontract', 'รับผิดชอบ']),
+                      company: colC || findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร']),
+                      time: colG || findCol(['เวลา', 'time'])
+                  });
+              }
+          }, [columns]);
+
+
+          // ==========================================
+          // นำเข้าข้อมูลจาก Google Sheets (ทับข้อมูลเดิม)
+          // ==========================================
+          const importFromCSV = async () => {
             if (!sheetUrl) return;
+            if (!firebaseCtx || !user) return alert("กรุณารอระบบเชื่อมต่อกับคลาวด์สักครู่");
+            
+            const confirmImport = window.confirm("การดึงข้อมูลจาก Google Sheets จะไปเขียนทับข้อมูลที่มีอยู่บนระบบ Cloud ทั้งหมด! คุณแน่ใจหรือไม่?");
+            if (!confirmImport) return;
+
             setIsLoading(true);
             try {
                 let processUrl = sheetUrl;
@@ -216,38 +312,35 @@
                 Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
-                    complete: function(results) {
+                    complete: async function(results) {
                         const parsedData = results.data;
                         if (parsedData.length > 0) {
+                            const { db, collection, doc, writeBatch, getDocs } = firebaseCtx;
+                            const batch = writeBatch(db);
+                            
+                            // 1. บันทึก Metadata (Columns)
                             const cols = Object.keys(parsedData[0]).filter(k => k.trim() !== '');
-                            setColumns(cols);
+                            const metaRef = doc(db, 'artifacts', appId, 'public', 'data', 'metadata', 'config');
+                            batch.set(metaRef, { columns: cols });
 
-                            const findCol = (keywords) => cols.find(c => keywords.some(kw => c.toLowerCase().includes(kw.toLowerCase()))) || '';
-                            
-                            const colB = cols.length > 1 ? cols[1] : '';
-                            const colC = cols.length > 2 ? cols[2] : '';
-                            const colD = cols.length > 3 ? cols[3] : '';
-                            const colE = cols.length > 4 ? cols[4] : '';
-                            const colF = cols.length > 5 ? cols[5] : '';
-                            const colG = cols.length > 6 ? cols[6] : '';
-                            const statusCol = findCol(['สถานะ', 'status']) || cols[cols.length - 1] || '';
+                            // 2. ลบข้อมูลเก่าทั้งหมดทิ้ง
+                            const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+                            const snapshot = await getDocs(tasksRef);
+                            snapshot.forEach(d => batch.delete(d.ref));
 
-                            const mapping = {
-                                colB, colC, colD, colE, colF, colG,
-                                date: colF || cols[0],
-                                status: statusCol,
-                                team: colB || findCol(['ทีม', 'subcontract', 'รับผิดชอบ']),
-                                company: colC || findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร']),
-                                time: colG || findCol(['เวลา', 'time'])
-                            };
-                            setKeyMap(mapping);
-                            
-                            const dataWithId = parsedData.map((row, idx) => ({ ...row, id: idx + 1 }));
-                            setTasks(dataWithId);
+                            // 3. ใส่ข้อมูลใหม่เข้าไป (เพิ่ม _index เพื่อให้เรียงลำดับถูก)
+                            parsedData.forEach((row, idx) => {
+                                const docRef = doc(tasksRef, `task_${idx}_${Date.now()}`);
+                                batch.set(docRef, { ...row, _index: idx });
+                            });
+
+                            await batch.commit();
+                            setIsLoading(false);
+                            alert("นำเข้าข้อมูลและอัปเดตขึ้น Cloud สำเร็จ!");
                         } else {
-                            setTasks([]);
+                            setIsLoading(false);
+                            alert("ไม่พบข้อมูลในไฟล์ CSV");
                         }
-                        setIsLoading(false);
                     },
                     error: function(error) {
                         alert('เกิดข้อผิดพลาดในการอ่านข้อมูล: ' + error.message);
@@ -272,61 +365,58 @@
               return d === dateObj.getDate() && m === (dateObj.getMonth() + 1) && y === dateObj.getFullYear();
           };
 
-          // สีพื้นฐานสำหรับการสุ่มกรณีไม่เจอชื่อทีมที่ตรงกัน
           const fallbackTeamColors = [
-              { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, // Purple
-              { bg: '#ccfbf1', text: '#0f766e', border: '#99f6e4' }, // Teal
-              { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, // Orange
-              { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe' }, // Indigo
-              { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, // Green
-              { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' }  // Rose
+              { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, { bg: '#ccfbf1', text: '#0f766e', border: '#99f6e4' }, 
+              { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe' }, 
+              { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' } 
           ];
 
-          // ล็อกสีตายตัวให้ 100% แยกต่างหากสำหรับแต่ละทีมหลัก
           const specificTeamColors = {
-              'ba': { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' },       // แดง
-              'tas': { bg: '#dbeafe', text: '#1e3a8a', border: '#bfdbfe' },      // น้ำเงิน
-              'atg': { bg: '#fef3c7', text: '#92400e', border: '#fde68a' },      // อำพัน (Amber)
-              'npy': { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' },      // มินต์ (Emerald)
-              'jeklink': { bg: '#fce7f3', text: '#9d174d', border: '#fbcfe8' },  // ชมพู
-              'jj&a': { bg: '#e0f2fe', text: '#075985', border: '#bae6fd' },     // ฟ้า (Sky)
-              'tp': { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe' },       // บานเย็น (Fuchsia)
-              'symc': { bg: '#ecfccb', text: '#854d0e', border: '#d9f99d' }      // เหลืองมะนาว (Lime)
+              'ba': { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' },
+              'tas': { bg: '#dbeafe', text: '#1e3a8a', border: '#bfdbfe' },
+              'atg': { bg: '#fef3c7', text: '#92400e', border: '#fde68a' },
+              'npy': { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' },
+              'jeklink': { bg: '#fce7f3', text: '#9d174d', border: '#fbcfe8' },
+              'jj&a': { bg: '#e0f2fe', text: '#075985', border: '#bae6fd' },
+              'tp': { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe' },
+              'symc': { bg: '#ecfccb', text: '#854d0e', border: '#d9f99d' }
           };
           
           const getTeamColorStyle = (teamName) => {
               if (!teamName || String(teamName).trim() === '') return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' };
               const str = String(teamName).trim();
               const lowerStr = str.toLowerCase();
-              
-              // ตรวจสอบจากรายชื่อทีมเฉพาะเพื่อล็อกสี
-              if (specificTeamColors[lowerStr]) {
-                  return specificTeamColors[lowerStr];
-              }
-
-              // ถ้าไม่มีชื่อทีมในฐานข้อมูลเฉพาะ ให้สุ่มจากสีพื้นฐานที่เหลือ
+              if (specificTeamColors[lowerStr]) return specificTeamColors[lowerStr];
               let hash = 0;
               for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
-          const handleCellChange = (id, field, value) => setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
+          // ==========================================
+          // แก้ไขเซลล์ (อัปเดตลง Cloud ทันที)
+          // ==========================================
+          const handleCellChange = async (id, field, value) => {
+              // 1. อัปเดตหน้าจอทันที (Optimistic update)
+              setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
+              
+              // 2. อัปเดตขึ้น Firestore
+              if (!firebaseCtx || !user) return;
+              const { db, doc, updateDoc } = firebaseCtx;
+              try {
+                  const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', id);
+                  await updateDoc(docRef, { [field]: value });
+              } catch (e) {
+                  console.error("Error updating document in Cloud:", e);
+              }
+          };
 
           const handleMouseMove = (e, task) => {
               const tooltipWidth = 320;
-              const tooltipHeight = 350; // ประเมินความสูงสูงสุดของ Tooltip
+              const tooltipHeight = 350; 
               let x = e.clientX + 15;
               let y = e.clientY + 15;
-              
-              // ป้องกัน Tooltip ล้นขอบจอขวา
-              if (x + tooltipWidth > window.innerWidth) {
-                  x = e.clientX - tooltipWidth - 15;
-              }
-              // ป้องกัน Tooltip ล้นขอบจอล่าง
-              if (y + tooltipHeight > window.innerHeight) {
-                  y = Math.max(10, window.innerHeight - tooltipHeight - 10);
-              }
-              
+              if (x + tooltipWidth > window.innerWidth) x = e.clientX - tooltipWidth - 15;
+              if (y + tooltipHeight > window.innerHeight) y = Math.max(10, window.innerHeight - tooltipHeight - 10);
               setTooltipData({ visible: true, task, x, y });
           };
           const handleMouseLeave = () => setTooltipData({ visible: false, task: null, x: 0, y: 0 });
@@ -341,59 +431,44 @@
           const cidCol = columns.find(c => c.toLowerCase().includes('cid')) || '';
           const equipYearCol = columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')) || '';
           const noteCol = columns.find(c => c.includes('หมายเหตุ') || c.toLowerCase().includes('note')) || '';
-          
-          // หาคอลัมน์ที่มีคำว่า Over 3 day เพื่อทำสีแจ้งเตือน
           const overDueCol = columns.find(c => c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')) || '';
 
           const uniqueTeams = teamCol ? [...new Set(tasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
           
-          // กรองข้อมูลพื้นฐานตาม Subfolder (Year view), เดือน, และทีมที่เลือก
           const baseFilteredTasks = tasks.filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
               
-              // ดึงเดือนจากคอลัมน์วันที่
               const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
               let m = null;
               if (dStr) {
                   const match = dStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
-                  if (match) {
-                      m = parseInt(match[2]);
-                  }
+                  if (match) m = parseInt(match[2]);
               }
 
-              // ดึงปีจาก Equipment Year สำหรับเมนูย่อย db ของแต่ละปี
               const eqYearStr = equipYearCol && t[equipYearCol] ? String(t[equipYearCol]).trim() : '';
               let y = null;
               if (eqYearStr) {
                   const yMatch = eqYearStr.match(/\d{4}/);
-                  if (yMatch) {
-                      y = parseInt(yMatch[0]);
-                  } else {
-                      y = parseInt(eqYearStr);
-                  }
+                  if (yMatch) y = parseInt(yMatch[0]);
+                  else y = parseInt(eqYearStr);
                   if (y < 100) y += 2000;
-                  if (y > 2500) y -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+                  if (y > 2500) y -= 543; 
               }
 
-              // Dashboard Subfolder Logic (อิงจาก Equipment Year)
               if (dashboardView === '2026') {
                   if (y !== 2026) matchYearView = false;
               } else if (dashboardView === 'history') {
                   if (!y || y < 2018 || y > 2025) matchYearView = false;
-              } // 'overview' = show all, matchYearView remains true
+              }
 
-              // Month Filter
               if (filterMonth !== 'All') {
                   if (m !== parseInt(filterMonth)) matchMonth = false;
               }
-              
-              // Team Filter
               if (filterTeams.length > 0 && teamCol && !filterTeams.includes(getCleanTeam(t[teamCol]))) matchTeam = false;
               
               return matchMonth && matchTeam && matchYearView;
           });
 
-          // ดึงเดือนที่มีเฉพาะในมุมมองที่เลือกมาแสดงใน Dropdown
           const uniqueMonths = [...new Set(baseFilteredTasks.map(t => {
               const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
               if(!dStr) return null;
@@ -574,27 +649,22 @@
                   return matchF || matchG;
               });
 
-              // จัดเรียงข้อมูล: 1. สถานะยังไม่เก็บมาก่อน 2. เรียงตามเวลานัดหมาย
               filteredTasks.sort((a, b) => {
-                  // ลอจิก 1: ตรวจสอบสถานะ (0 = ยังไม่เสร็จ, 1 = สำเร็จแล้ว)
                   const statusA = getCleanStatus(a[statusCol]).toLowerCase();
                   const statusB = getCleanStatus(b[statusCol]).toLowerCase();
                   
                   const isDoneA = (statusA.includes('สำเร็จ') || statusA.includes('เรียบร้อย') || statusA.includes('complete') || statusA.includes('done') || statusA.includes('100%')) ? 1 : 0;
                   const isDoneB = (statusB.includes('สำเร็จ') || statusB.includes('เรียบร้อย') || statusB.includes('complete') || statusB.includes('done') || statusB.includes('100%')) ? 1 : 0;
 
-                  if (isDoneA !== isDoneB) {
-                      return isDoneA - isDoneB; // เอา 0 (ยังไม่เสร็จ) ขึ้นก่อน 1 (เสร็จแล้ว)
-                  }
+                  if (isDoneA !== isDoneB) return isDoneA - isDoneB; 
 
-                  // ลอจิก 2: เรียงตามเวลานัดหมาย (แปลงเวลาเป็นนาทีเพื่อเปรียบเทียบ)
                   const timeA = a[timeCol] ? String(a[timeCol]).trim() : '';
                   const timeB = b[timeCol] ? String(b[timeCol]).trim() : '';
 
                   const parseTime = (str) => {
                       const match = str.match(/(\d{1,2}):(\d{2})/);
                       if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-                      return 9999; // ถ้าไม่มีเวลาหรือรูปแบบผิด ให้ไปอยู่ท้ายสุดของกลุ่ม
+                      return 9999; 
                   };
 
                   return parseTime(timeA) - parseTime(timeB);
@@ -625,7 +695,6 @@
               compCol, teamCol, dateCol, timeCol,
               columns.find(c => c.toLowerCase().includes('แจ้ง subcontract') || c.includes('แจ้ง Sub')),
               columns.find(c => c.toLowerCase().includes('อีเมล') || c.toLowerCase().includes('email') || c.toLowerCase().includes('mail')),
-              // เพิ่มการซ่อนคอลัมน์ที่ไม่ต้องการให้โชว์ใน Tooltip
               columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')),
               columns.find(c => c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')),
               columns.find(c => c.includes('วันที่โทร') || c.includes('โทรติดต่อ'))
@@ -638,7 +707,6 @@
                   <h1 className="text-xl font-bold flex items-center gap-2 whitespace-nowrap"><i className="fa-solid fa-truck-fast text-blue-400"></i><span>EquipTracker</span></h1>
                 </div>
                 <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-                  {/* เมนู Dashboard พร้อม Sub-menu ย่อย */}
                   <div className="space-y-1">
                     <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
                       <i className="fa-solid fa-chart-pie text-lg w-6 text-center"></i>
@@ -657,17 +725,29 @@
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
                 </nav>
                 <div className="p-4 mt-auto border-t border-slate-800">
-                  <button onClick={fetchGoogleSheet} disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-green-900/20 whitespace-nowrap">
-                    {isLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-rotate"></i>}
-                    <span>ซิงค์ข้อมูลล่าสุด</span>
+                  <button onClick={importFromCSV} disabled={isLoading || !isDbConnected} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-indigo-900/20 whitespace-nowrap">
+                    {isLoading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-cloud-arrow-down"></i>}
+                    <span>นำเข้าข้อมูล (ดึงจาก Sheet)</span>
                   </button>
                 </div>
               </aside>
 
               <main className="flex-1 overflow-y-auto p-4 md:p-8 relative w-full">
+                
+                {/* Header Badge สำหรับแจ้งสถานะ Real-time */}
+                {isDbConnected && (
+                    <div className="absolute top-4 right-8 z-10 flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2 rounded-full border border-emerald-200 shadow-sm animate-in fade-in">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        Real-time Cloud Connected
+                    </div>
+                )}
+
                 {/* --- 1. หน้า Dashboard --- */}
                 {activeTab === 'dashboard' && (
-                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
+                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 pt-8 md:pt-0">
                     <header className="mb-4 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                       <div>
                           <div className="flex items-center gap-3">
@@ -698,7 +778,6 @@
                       </div>
                     </header>
 
-                    {/* ปรับกล่องสถานะให้อยู่บรรทัดเดียวกันทั้งหมด เลื่อนได้ ขยายขนาด และเพิ่ม Padding (pt-3 px-2) ไม่ให้ขอบเรืองแสงหาย */}
                     <div className="flex flex-nowrap overflow-x-auto gap-4 pb-4 pt-3 px-2 custom-scrollbar w-full">
                         <div className="bg-slate-800 text-white p-4 rounded-xl shadow-md border border-slate-700 flex-shrink-0 min-w-[160px] flex flex-col items-center justify-center gap-2">
                             <p className="text-sm font-semibold text-slate-300 text-center w-full">จำนวนงานทั้งหมด</p>
@@ -773,7 +852,7 @@
 
                 {/* --- 2. หน้าตารางงาน --- */}
                 {activeTab === 'tasks' && (
-                  <div className="max-w-full mx-auto space-y-4 animate-in fade-in duration-500">
+                  <div className="max-w-full mx-auto space-y-4 animate-in fade-in duration-500 pt-8 md:pt-0">
                     <header className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
@@ -840,7 +919,9 @@
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {tableTasks.length === 0 ? (
+                            {tasks.length === 0 && !isDbConnected ? (
+                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อฐานข้อมูล หรือ ยังไม่มีข้อมูล (กดนำเข้าข้อมูลจาก Sheet ด้านซ้ายล่าง)</td></tr>
+                            ) : tableTasks.length === 0 ? (
                                 <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
                             ) : tableTasks.map((task) => (
                               <tr key={task.id} className="hover:bg-slate-50 transition-colors">
@@ -862,17 +943,16 @@
                                         const tColor = getTeamColorStyle(val);
                                         styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     } else if (isOverDueCell && cleanVal) {
-                                        // จัดการสี Over 3 Day อัตโนมัติตามลอจิก
                                         let num = NaN;
                                         const match = cleanVal.match(/-?\d+/);
                                         if(match) num = parseInt(match[0], 10);
 
                                         if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) {
-                                            styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; // สีแดง (เกินกำหนด / ติดลบ)
+                                            styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                         } else if (num === 0 || cleanVal.includes('ครบกำหนด')) {
-                                            styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; // สีเหลือง (ครบกำหนด หรือ 0 วัน)
+                                            styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
                                         } else if (num > 0 || cleanVal.includes('เหลือ')) {
-                                            styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; // สีเขียว (1 วันขึ้นไป หรือ เหลือวัน)
+                                            styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                         }
                                     }
 
@@ -901,7 +981,7 @@
                               <i className="fa-solid fa-list-check"></i>
                               แสดงผลทั้งหมด {tableTasks.length} รายการ
                           </div>
-                          <div className="text-xs text-slate-400">อัปเดตแบบเรียลไทม์</div>
+                          <div className="text-xs text-slate-400">บันทึกอัตโนมัติบน Cloud</div>
                       </div>
                     </div>
                   </div>
@@ -909,7 +989,7 @@
 
                 {/* --- 3. หน้าปฏิทิน --- */}
                 {activeTab === 'calendar' && (
-                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
+                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 pt-8 md:pt-0">
                     <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-8">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
