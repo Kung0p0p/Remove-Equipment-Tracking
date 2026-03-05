@@ -49,17 +49,28 @@
             border-radius: 4px;
             outline: none;
             transition: all 0.2s;
-            min-width: 100px;
+            /* แก้ไข: บังคับข้อความบรรทัดเดียว และตัดจบด้วย ... เมื่อลากย่อช่อง */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
         }
         .editable-cell:hover { border-color: #e2e8f0; background: #f8fafc; }
         .editable-cell:focus { border-color: #3b82f6; background: #ffffff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+        
+        /* สไตล์สำหรับหัวตาราง */
+        .th-content {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding-right: 16px;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // ลงทะเบียนปลั๊กอินแสดงตัวเลขในกราฟแบบปลอดภัย (ป้องกันระบบค้างถ้าโหลดเน็ตเวิร์คไม่ทัน)
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
         }
@@ -115,6 +126,68 @@
             );
         };
 
+        // --- Component ซ่อน/แสดง คอลัมน์ ---
+        const ColumnToggle = ({ columns, hiddenColumns, setHiddenColumns }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const dropdownRef = useRef(null);
+
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                        setIsOpen(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, [dropdownRef]);
+
+            const toggleColumn = (col) => {
+                if (hiddenColumns.includes(col)) {
+                    setHiddenColumns(hiddenColumns.filter(c => c !== col));
+                } else {
+                    setHiddenColumns([...hiddenColumns, col]);
+                }
+            };
+
+            const toggleAll = () => {
+                if (hiddenColumns.length > 0) {
+                    setHiddenColumns([]); // โชว์ทั้งหมด
+                } else {
+                    setHiddenColumns(columns); // ซ่อนทั้งหมด
+                }
+            };
+
+            return (
+                <div className="relative inline-block text-left" ref={dropdownRef}>
+                    <button type="button" onClick={() => setIsOpen(!isOpen)} className="flex items-center gap-1.5 text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 px-4 py-1.5 rounded-lg border border-slate-300 shadow-sm transition-colors h-[38px]">
+                        <i className="fa-regular fa-eye text-slate-500"></i> ซ่อน/แสดง คอลัมน์
+                        <i className={`fa-solid fa-chevron-down text-xs text-slate-400 ml-1 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}></i>
+                    </button>
+                    {isOpen && (
+                        <div className="origin-top-right absolute right-0 mt-2 w-64 rounded-xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 z-[100] overflow-hidden">
+                            <div className="max-h-80 overflow-y-auto py-2 custom-scrollbar">
+                                <label className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors border-b border-slate-100">
+                                    <input type="checkbox" checked={hiddenColumns.length === 0} onChange={toggleAll} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
+                                    <span className="text-sm font-bold text-slate-800">แสดงทั้งหมด</span>
+                                </label>
+                                {columns.map(col => (
+                                    <label key={col} className="flex items-center px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={!hiddenColumns.includes(col)} 
+                                            onChange={() => toggleColumn(col)} 
+                                            className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                                        />
+                                        <span className="text-sm text-slate-600 truncate" title={col}>{col}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         // --- Component สำหรับวาดกราฟ Chart.js ---
         const ChartComponent = ({ type, data, options }) => {
             const chartRef = useRef(null);
@@ -148,6 +221,7 @@
           const [isSidebarOpen, setIsSidebarOpen] = useState(true);
           
           const [columns, setColumns] = useState([]);
+          const [hiddenColumns, setHiddenColumns] = useState([]); // State สำหรับเก็บรายชื่อคอลัมน์ที่ถูกซ่อน
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
@@ -167,8 +241,39 @@
           const [searchTerm, setSearchTerm] = useState('');
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
+          const [colWidths, setColWidths] = useState({}); // เก็บสถานะความกว้างของคอลัมน์
 
-          // โหลดข้อมูลที่เคยบันทึกไว้ใน LocalStorage (Safe Mode ป้องกันหน้าจอขาว)
+          // ฟังก์ชันสำหรับลากปรับขนาดคอลัมน์
+          const handleMouseDown = (e, col) => {
+              e.preventDefault();
+              const startX = e.pageX;
+              const thElement = e.currentTarget.parentElement;
+              const startWidth = thElement.getBoundingClientRect().width;
+
+              const onMouseMove = (moveEvent) => {
+                  const newWidth = Math.max(60, startWidth + (moveEvent.pageX - startX));
+                  setColWidths(prev => ({ ...prev, [col]: newWidth }));
+              };
+
+              const onMouseUp = () => {
+                  document.removeEventListener('mousemove', onMouseMove);
+                  document.removeEventListener('mouseup', onMouseUp);
+              };
+
+              document.addEventListener('mousemove', onMouseMove);
+              document.addEventListener('mouseup', onMouseUp);
+          };
+
+          const handleDoubleClickResize = (col) => {
+              // ล้างค่าความกว้าง เพื่อให้กลับไปอิงตามข้อความอัตโนมัติ
+              setColWidths(prev => {
+                  const newWidths = { ...prev };
+                  delete newWidths[col];
+                  return newWidths;
+              });
+          };
+
+          // โหลดข้อมูลที่เคยบันทึกไว้ใน LocalStorage
           useEffect(() => {
               try {
                   const savedTasks = localStorage.getItem('equip_tracker_tasks');
@@ -178,11 +283,9 @@
                       setTasks(JSON.parse(savedTasks));
                       setColumns(JSON.parse(savedCols));
                   } else {
-                      // ถ้าเพิ่งเปิดครั้งแรก ให้ไปดึงจาก Sheet อัตโนมัติ
                       fetchGoogleSheet();
                   }
               } catch (error) {
-                  // หากเบราว์เซอร์บล็อก LocalStorage ให้ดึงข้อมูลใหม่โดยไม่ค้าง
                   console.warn("ระบบเซฟข้อมูลถูกบล็อก ระบบจะดึงข้อมูลใหม่จาก Sheet โดยตรง");
                   fetchGoogleSheet();
               }
@@ -210,6 +313,18 @@
                   });
               }
           }, [columns]);
+
+          // ฟังก์ชันสำหรับเคลียร์ตัวกรองหน้าตารางทั้งหมด
+          const resetFilters = () => {
+              setTableFilterTeams([]);
+              setTableFilterCID('All');
+              setTableFilterDate('All');
+              setTableFilterYear('All');
+              setTableFilterStatus('All');
+              setTableFilterOverdue('All');
+              setSearchTerm('');
+              // setHiddenColumns([]); // หากอยากให้ปุ่มล้างตัวกรอง โชว์คอลัมน์ทั้งหมดด้วยให้เอาคอมเมนต์ตรงนี้ออก
+          };
 
 
           // ==========================================
@@ -265,7 +380,6 @@
                             const dataWithId = parsedData.map((row, idx) => ({ ...row, id: `task_${idx}_${Date.now()}`, _index: idx }));
                             setTasks(dataWithId);
 
-                            // บันทึกลง LocalStorage แบบปลอดภัย
                             try {
                                 localStorage.setItem('equip_tracker_tasks', JSON.stringify(dataWithId));
                                 localStorage.setItem('equip_tracker_columns', JSON.stringify(cols));
@@ -416,7 +530,6 @@
           const uniqueDates = dateCol ? [...new Set(tasks.map(t => t[dateCol] ? String(t[dateCol]).trim() : '').filter(Boolean))].sort() : [];
           const uniqueYears = equipYearCol ? [...new Set(tasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
           const uniqueStatuses = statusCol ? [...new Set(tasks.map(t => getCleanStatus(t[statusCol])))].sort() : [];
-          const uniqueOverdueStatus = overDueCol ? [...new Set(tasks.map(t => t[overDueCol] ? String(t[overDueCol]).trim() : '').filter(Boolean))].sort() : [];
 
           const getStatusColor = (status, opacity = 1) => {
               const s = status ? String(status).trim().toLowerCase() : '';
@@ -459,7 +572,6 @@
               });
           }
 
-          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว
           const getStatusRank = (status) => {
               const s = String(status).trim().toLowerCase();
               if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
@@ -551,11 +663,11 @@
               plugins: { 
                   legend: { display: true, position: 'top' },
                   datalabels: {
-                      color: '#ffffff', // ตัวอักษรสีขาว
+                      color: '#ffffff',
                       font: { weight: 'bold', size: 14 },
-                      textStrokeColor: 'rgba(15, 23, 42, 0.7)', // เพิ่มขอบสีดำโปร่งแสง ทำให้อ่านชัดเจนทุกพื้นหลัง
+                      textStrokeColor: 'rgba(15, 23, 42, 0.7)',
                       textStrokeWidth: 3,
-                      anchor: 'center', align: 'center', // ดันกลับเข้ามาไว้ตรงกลางแท่งกราฟเหมือนเดิม
+                      anchor: 'center', align: 'center',
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               }, 
@@ -593,7 +705,6 @@
               scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 } } }
           };
 
-          // --- คำนวณกราฟงานเกินกำหนดแยกตามทีม (นัดหมายลูกค้า) ---
           const overdueByTeamCounts = {};
           activeTeams.forEach(team => overdueByTeamCounts[team] = 0);
 
@@ -616,7 +727,7 @@
               datasets: [{
                   label: 'เกินกำหนดนัดหมาย (CIDs)',
                   data: activeTeams.map(team => overdueByTeamCounts[team]),
-                  backgroundColor: 'rgba(239, 68, 68, 0.8)', // สีแดง
+                  backgroundColor: 'rgba(239, 68, 68, 0.8)',
                   borderColor: 'rgba(220, 38, 38, 1)',
                   borderWidth: 1,
                   borderRadius: 4
@@ -648,7 +759,30 @@
           if (tableFilterDate !== 'All' && dateCol) tableTasks = tableTasks.filter(t => (t[dateCol] ? String(t[dateCol]).trim() : '') === tableFilterDate);
           if (tableFilterYear !== 'All' && equipYearCol) tableTasks = tableTasks.filter(t => (t[equipYearCol] ? String(t[equipYearCol]).trim() : '') === tableFilterYear);
           if (tableFilterStatus !== 'All' && statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[statusCol]) === tableFilterStatus);
-          if (tableFilterOverdue !== 'All' && overDueCol) tableTasks = tableTasks.filter(t => (t[overDueCol] ? String(t[overDueCol]).trim() : '') === tableFilterOverdue);
+          
+          // โลจิกตัวกรองใหม่ที่ถูกต้องเด็ดขาด ไม่ทับซ้อนกัน
+          if (tableFilterOverdue !== 'All' && overDueCol) {
+              tableTasks = tableTasks.filter(t => {
+                  const val = t[overDueCol] || '';
+                  const cleanVal = getCleanStatus(val).toLowerCase();
+                  if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
+                  
+                  let num = NaN;
+                  const match = cleanVal.match(/-?\d+/);
+                  if(match) num = parseInt(match[0], 10);
+
+                  // สูตรจัดกลุ่ม 3 ประเภทแบบไม่ทับซ้อน
+                  const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
+                  const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
+                  const isNotDue = !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
+
+                  if (tableFilterOverdue === 'เกินกำหนด') return isOverdue;
+                  if (tableFilterOverdue === 'ครบกำหนด') return isDue;
+                  if (tableFilterOverdue === 'ยังไม่ครบกำหนด') return isNotDue;
+                  
+                  return false;
+              });
+          }
           
           if (searchTerm) {
               const lowerSearch = searchTerm.toLowerCase();
@@ -726,6 +860,9 @@
               }),
               columns.find(c => c.includes('วันที่โทร') || c.includes('โทรติดต่อ'))
           ].filter(Boolean);
+
+          // คำนวณคอลัมน์ที่ต้องแสดงจริงหลังหักคอลัมน์ที่ถูกซ่อน
+          const visibleColumns = columns.filter(col => !hiddenColumns.includes(col));
 
           return (
             <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
@@ -836,7 +973,6 @@
                             <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[300px]">
                                 {chartFilteredTasks.length > 0 ? (
                                     <>
-                                        {/* ล็อกขนาดกราฟโดนัทให้เท่ากันทุกมุมมอง */}
                                         <div className="relative mx-auto flex items-center justify-center" style={{ width: '240px', height: '240px' }}>
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                                                 <span className="text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks.length}</span>
@@ -844,7 +980,6 @@
                                             </div>
                                             <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
                                         </div>
-                                        {/* Legend ด้านล่าง */}
                                         <div className="mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
                                             {chartSortedStatuses.map(s => (
                                                 <div key={s} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
@@ -867,7 +1002,6 @@
                             </div>
                         </div>
 
-                        {/* กราฟปริมาณงานและสถานะแยกตามทีม */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3>
@@ -881,7 +1015,6 @@
                             </div>
                         </div>
 
-                        {/* กราฟงานเกินกำหนดแยกตามทีม */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3>
@@ -954,33 +1087,69 @@
                                     {uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             )}
+                            
+                            {/* เมนูตัวกรอง 'นัดหมายลูกค้า' */}
                             {overDueCol && (
                                 <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white outline-none max-w-[140px] truncate h-[38px]">
                                     <option value="All">นัดหมายลูกค้า (ทั้งหมด)</option>
-                                    {uniqueOverdueStatus.map(t => <option key={t} value={t}>{t}</option>)}
+                                    <option value="ครบกำหนด">ครบกำหนด (0 วัน)</option>
+                                    <option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option>
+                                    <option value="เกินกำหนด">เกินกำหนด (เกิน...)</option>
                                 </select>
                             )}
+                            
+                            {/* ปุ่มซ่อน/แสดง คอลัมน์ และ ปุ่มล้างตัวกรอง ถูกจัดชิดขวา */}
+                            <div className="ml-auto flex items-center gap-2">
+                                <ColumnToggle columns={columns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} />
+                                <button onClick={resetFilters} className="flex items-center gap-1.5 text-sm font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-500 px-4 py-1.5 rounded-lg border border-red-200 hover:border-red-500 transition-colors h-[38px]">
+                                    <i className="fa-solid fa-rotate-left"></i> ล้างตัวกรองทั้งหมด
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                      <div className="overflow-x-auto table-container max-h-[50vh]">
-                        <table className="w-full text-left border-collapse min-w-max text-sm">
-                          <thead className="sticky top-0 z-10">
-                            <tr className="bg-slate-800 text-white">
-                              {columns.map((col, idx) => (
-                                  <th key={idx} className="p-3 text-sm font-semibold whitespace-nowrap border-r border-slate-700">{col}</th>
-                              ))}
+                      <div className="overflow-x-auto table-container max-h-[60vh]">
+                        {/* ปรับ tableLayout เป็น auto เพื่อให้ตั้งต้นตามข้อความ */}
+                        <table className="w-full text-left border-collapse text-sm" style={{ tableLayout: 'auto' }}>
+                          <thead className="sticky top-0 z-10 bg-slate-800 shadow-sm">
+                            <tr>
+                              {/* กรองเฉพาะคอลัมน์ที่ไม่ได้ถูกซ่อน พร้อมฟังก์ชันลากและดับเบิ้ลคลิก */}
+                              {visibleColumns.map((col, idx) => {
+                                  const hasFixedWidth = colWidths[col] !== undefined;
+                                  return (
+                                      <th 
+                                          key={idx} 
+                                          className="border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none"
+                                          style={hasFixedWidth ? { width: colWidths[col], maxWidth: colWidths[col] } : {}}
+                                      >
+                                          <div className="th-content text-sm font-semibold text-white px-4 py-3">
+                                              {col}
+                                          </div>
+                                          {/* ตัวลากปรับขนาด (Drag Handle) */}
+                                          <div 
+                                              onMouseDown={(e) => handleMouseDown(e, col)}
+                                              onDoubleClick={() => handleDoubleClickResize(col)}
+                                              title="ลากเพื่อปรับขนาด / ดับเบิ้ลคลิกเพื่อจัดขนาดตามข้อความอัตโนมัติ"
+                                              className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
+                                          >
+                                              <div className="w-[2px] h-4 bg-white/60 rounded-full"></div>
+                                          </div>
+                                      </th>
+                                  );
+                              })}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
                             {tasks.length === 0 ? (
-                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อ หรือ ยังไม่มีข้อมูล (กดปุ่มดึงข้อมูลซ้ายล่าง)</td></tr>
+                                <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อ หรือ ยังไม่มีข้อมูล (กดปุ่มดึงข้อมูลซ้ายล่าง)</td></tr>
                             ) : tableTasks.length === 0 ? (
-                                <tr><td colSpan={columns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
+                                <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
                             ) : tableTasks.map((task) => (
                               <tr key={task.id} className="hover:bg-slate-50 transition-colors">
-                                {columns.map((col, idx) => {
+                                {/* กรองเฉพาะคอลัมน์ที่ไม่ได้ถูกซ่อน */}
+                                {visibleColumns.map((col, idx) => {
+                                    const hasFixedWidth = colWidths[col] !== undefined; // เพิ่มบรรทัดนี้เพื่อแก้ไขบั๊กหน้าจอขาว
                                     const isStatusCell = col === statusCol;
                                     const isTeamCell = col === teamCol;
                                     const isOverDueCell = col === overDueCol; 
@@ -1004,7 +1173,7 @@
 
                                         if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) {
                                             styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                        } else if (num === 0 || cleanVal.includes('ครบกำหนด')) {
+                                        } else if (num === 0 || cleanVal.includes('ครบกำหนด') || cleanVal === '0') {
                                             styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
                                         } else if (num > 0 || cleanVal.includes('เหลือ')) {
                                             styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
@@ -1012,13 +1181,18 @@
                                     }
 
                                     return (
-                                        <td key={idx} className="p-2 align-top border-r border-slate-100">
+                                        <td 
+                                            key={idx} 
+                                            className="p-2 align-middle border-r border-slate-100"
+                                            style={hasFixedWidth ? { width: colWidths[col], maxWidth: colWidths[col] } : {}}
+                                        >
                                             <div 
                                                 contentEditable="true"
                                                 suppressContentEditableWarning={true}
-                                                className={cellStyle + " break-words whitespace-pre-wrap leading-relaxed"} 
-                                                style={{ ...styleObj, minHeight: '32px', cursor: 'text' }}
+                                                className={cellStyle} 
+                                                style={{ ...styleObj, cursor: 'text' }}
                                                 onBlur={e => handleCellChange(task.id, col, e.target.innerText)} 
+                                                title={val}
                                             >
                                                 {val}
                                             </div>
