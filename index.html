@@ -134,7 +134,7 @@
                 };
             }, [type, data, options]);
 
-            return <canvas ref={chartRef} style={{ width: '100%', height: '100%' }} />;
+            return <canvas ref={chartRef} />;
         };
 
         const defaultSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQYFrvAPjj0jt6NlL6KG64WkCLcPCzw1M1OB0a0Gkuv48knoGTz_iSQkupxQSwzzRJEOht35gWPcHUU/pub?gid=2146282055&single=true&output=csv';
@@ -152,7 +152,7 @@
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('overview'); 
+          const [dashboardView, setDashboardView] = useState('overview'); // เปลี่ยนให้เริ่มต้นที่ ภาพรวมทั้งหมด
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -362,12 +362,8 @@
           const cidCol = columns.find(c => c.toLowerCase().includes('cid')) || '';
           const equipYearCol = columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')) || '';
           const noteCol = columns.find(c => c.includes('หมายเหตุ') || c.toLowerCase().includes('note')) || '';
-          
-          // ค้นหาคอลัมน์ นัดหมายลูกค้า แบบครอบคลุมที่สุด
-          const overDueCol = columns.find(c => {
-              const lowerC = c.toLowerCase().replace(/\s+/g, '');
-              return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
-          }) || '';
+          // แก้ไขการดึงคอลัมน์โดยอิงจากคำว่า "นัดหมายลูกค้า" เป็นหลัก
+          const overDueCol = columns.find(c => c.includes('นัดหมายลูกค้า') || c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')) || '';
 
           const uniqueTeams = teamCol ? [...new Set(tasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
           
@@ -459,7 +455,7 @@
               });
           }
 
-          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว
+          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว (ตามที่ระบุ)
           const getStatusRank = (status) => {
               const s = String(status).trim().toLowerCase();
               if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
@@ -472,14 +468,14 @@
               if (s.includes('ไม่พบ') || s.includes('หาย')) return 8;
               if (s.includes('เลื่อน')) return 9;
               if (s.includes('ยกเลิก') || s.includes('cancel')) return 10;
-              return 99; 
+              return 99; // สถานะอื่นๆ ไว้ท้ายสุด
           };
 
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => {
               const rankA = getStatusRank(a);
               const rankB = getStatusRank(b);
-              if (rankA !== rankB) return rankA - rankB; 
-              return statusCounts[b] - statusCounts[a]; 
+              if (rankA !== rankB) return rankA - rankB; // เรียงตาม Rank ก่อน
+              return statusCounts[b] - statusCounts[a]; // ถ้า Rank เท่ากัน ให้เรียงตามจำนวน
           });
 
           const chartStatusCounts = {};
@@ -505,10 +501,9 @@
           };
 
           const statusChartOptions = {
-              responsive: true, maintainAspectRatio: false, cutout: '75%',
-              layout: { padding: 10 },
+              responsive: true, maintainAspectRatio: false, cutout: '72%',
               plugins: {
-                  legend: { display: false }, // ปิด Legend ใน Canvas เพื่อสร้างด้วย HTML
+                  legend: { position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
                   tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 },
                   datalabels: { display: false }
               }
@@ -541,23 +536,20 @@
           const monthlyChartData = {
               labels: monthlyChartLabels,
               datasets: [
-                  { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
-                  { label: 'Pending (CIDs)', data: Object.values(monthlyData).map(d => d.remaining), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
+                  { label: 'Collected', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
+                  { label: 'Pending', data: Object.values(monthlyData).map(d => d.remaining), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
               ]
           };
           const monthlyChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 25 } },
               plugins: { 
                   legend: { display: true, position: 'top' },
                   datalabels: {
-                      color: '#0f172a', // สีตัวเลขดำเข้มชัดเจน
-                      font: { weight: 'bold', size: 14 },
-                      anchor: 'end', align: 'top', offset: 4,
+                      color: '#ffffff', font: { weight: 'bold', size: 10 },
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               }, 
-              scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
+              scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
           };
 
           const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[statusCol])))];
@@ -575,32 +567,30 @@
 
           const teamChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 25 } },
               plugins: { 
                   legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } },
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
-                      color: '#0f172a', // สีตัวเลขดำเข้มชัดเจน
-                      font: { weight: 'bold', size: 14 }, 
-                      anchor: 'end', align: 'top', offset: 4,
+                      color: '#ffffff', font: { weight: 'bold', size: 10 }, anchor: 'center', align: 'center',
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
-              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
+              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 } } }
           };
 
-          // --- คำนวณกราฟงานเกินกำหนดแยกตามทีม (นัดหมายลูกค้า) ---
+          // --- คำนวณกราฟงานเกินกำหนดแยกตามทีม (Overdue) ---
           const overdueByTeamCounts = {};
           activeTeams.forEach(team => overdueByTeamCounts[team] = 0);
 
           chartFilteredTasks.forEach(t => {
               const team = getCleanTeam(t[teamCol]);
               const overDueVal = overDueCol ? getCleanStatus(t[overDueCol]) : '';
-              if (overDueVal && overDueVal !== 'ไม่ระบุสถานะ') {
+              if (overDueVal) {
                   let num = NaN;
                   const match = overDueVal.match(/-?\d+/);
                   if(match) num = parseInt(match[0], 10);
                   
+                  // นับเฉพาะที่เกินกำหนด (มีคำว่าเกิน, over หรือตัวเลขน้อยกว่า 0)
                   if (overDueVal.includes('เกิน') || overDueVal.includes('over') || num < 0) {
                       overdueByTeamCounts[team]++;
                   }
@@ -610,7 +600,7 @@
           const overdueChartData = {
               labels: activeTeams,
               datasets: [{
-                  label: 'เกินกำหนดนัดหมาย (CIDs)',
+                  label: 'เกินกำหนด (Sites)',
                   data: activeTeams.map(team => overdueByTeamCounts[team]),
                   backgroundColor: 'rgba(239, 68, 68, 0.8)', // สีแดง
                   borderColor: 'rgba(220, 38, 38, 1)',
@@ -621,18 +611,15 @@
 
           const overdueChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 25 } },
               plugins: { 
-                  legend: { display: false }, 
+                  legend: { display: false }, // ปิด Legend เพราะมีแค่แท่งสีเดียว
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
-                      color: '#991b1b', // สีตัวเลขแดงเข้มชัดเจน
-                      font: { weight: 'bold', size: 14 }, 
-                      anchor: 'end', align: 'top', offset: 4,
+                      color: '#ffffff', font: { weight: 'bold', size: 10 }, anchor: 'center', align: 'center',
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
-              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
+              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 } } }
           };
 
           // --- Table Filtering Logic ---
@@ -714,10 +701,8 @@
               columns.find(c => c.toLowerCase().includes('แจ้ง subcontract') || c.includes('แจ้ง Sub')),
               columns.find(c => c.toLowerCase().includes('อีเมล') || c.toLowerCase().includes('email') || c.toLowerCase().includes('mail')),
               columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')),
-              columns.find(c => {
-                  const lowerC = c.toLowerCase().replace(/\s+/g, '');
-                  return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
-              }),
+              // ซ่อนคอลัมน์ นัดหมายลูกค้า ออกจาก Tooltip เพื่อไม่ให้รก
+              columns.find(c => c.includes('นัดหมายลูกค้า') || c.toLowerCase().includes('over 3') || c.toLowerCase().includes('เกินกำหนด')),
               columns.find(c => c.includes('วันที่โทร') || c.includes('โทรติดต่อ'))
           ].filter(Boolean);
 
@@ -827,30 +812,18 @@
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-pie text-blue-600"></i> สัดส่วนสถานะงาน</h3>
                                 {selectedStatuses.length > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Filtered</span>}
                             </div>
-                            <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[300px]">
+                            <div className="relative flex-1 w-full min-h-[300px]">
+                                <div className="absolute inset-0 pb-12 flex flex-col items-center justify-center pointer-events-none z-10">
+                                    {chartFilteredTasks.length > 0 && (
+                                        <div className="text-center mt-2">
+                                            <span className="text-4xl font-bold text-slate-800 block leading-none">{chartFilteredTasks.length}</span>
+                                            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-widest mt-1 block">Sites</span>
+                                        </div>
+                                    )}
+                                </div>
                                 {chartFilteredTasks.length > 0 ? (
-                                    <>
-                                        {/* ล็อกขนาดกราฟโดนัทให้เท่ากันทุกมุมมอง */}
-                                        <div className="relative mx-auto flex items-center justify-center" style={{ width: '240px', height: '240px' }}>
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                                                <span className="text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks.length}</span>
-                                                <span className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span>
-                                            </div>
-                                            <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
-                                        </div>
-                                        {/* Legend ด้านล่าง */}
-                                        <div className="mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
-                                            {chartSortedStatuses.map(s => (
-                                                <div key={s} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
-                                                    <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>
-                                                    {s} <span className="text-slate-400">({chartStatusCounts[s]})</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูลตามสถานะที่เลือก</p>
-                                )}
+                                    <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
+                                ) : <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูลตามสถานะที่เลือก</p>}
                             </div>
                         </div>
 
@@ -861,7 +834,7 @@
                             </div>
                         </div>
 
-                        {/* กราฟปริมาณงานและสถานะแยกตามทีม */}
+                        {/* กราฟปริมาณงานและสถานะแยกตามทีม (ย่อเหลือ 2 ส่วนเพื่อให้พื้นที่กราฟ Overdue) */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3>
@@ -875,7 +848,7 @@
                             </div>
                         </div>
 
-                        {/* กราฟงานเกินกำหนดแยกตามทีม */}
+                        {/* กราฟงานเกินกำหนดแยกตามทีม (ใหม่) */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3>
