@@ -152,7 +152,7 @@
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('overview'); // เปลี่ยนให้เริ่มต้นที่ ภาพรวมทั้งหมด
+          const [dashboardView, setDashboardView] = useState('overview'); 
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -363,7 +363,7 @@
           const equipYearCol = columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')) || '';
           const noteCol = columns.find(c => c.includes('หมายเหตุ') || c.toLowerCase().includes('note')) || '';
           
-          // ค้นหาคอลัมน์ นัดหมายลูกค้า แบบครอบคลุมที่สุด (ลบเว้นวรรคออกก่อนหา ป้องกันพิมพ์ผิดใน Sheet)
+          // ค้นหาคอลัมน์ นัดหมายลูกค้า แบบครอบคลุมที่สุด
           const overDueCol = columns.find(c => {
               const lowerC = c.toLowerCase().replace(/\s+/g, '');
               return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
@@ -459,7 +459,7 @@
               });
           }
 
-          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว (ตามที่ระบุ)
+          // ฟังก์ชันสำหรับจัดเรียงลำดับ Status แบบตายตัว
           const getStatusRank = (status) => {
               const s = String(status).trim().toLowerCase();
               if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
@@ -478,8 +478,8 @@
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => {
               const rankA = getStatusRank(a);
               const rankB = getStatusRank(b);
-              if (rankA !== rankB) return rankA - rankB; // เรียงตาม Rank ก่อน
-              return statusCounts[b] - statusCounts[a]; // ถ้า Rank เท่ากัน ให้เรียงตามจำนวน
+              if (rankA !== rankB) return rankA - rankB; 
+              return statusCounts[b] - statusCounts[a]; 
           });
 
           const chartStatusCounts = {};
@@ -546,7 +546,7 @@
           };
           const monthlyChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 20 } },
+              layout: { padding: { top: 25 } },
               plugins: { 
                   legend: { display: true, position: 'top' },
                   datalabels: {
@@ -555,7 +555,7 @@
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               }, 
-              scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grace: '10%' } }
+              scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
           };
 
           const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[statusCol])))];
@@ -573,7 +573,7 @@
 
           const teamChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 20 } },
+              layout: { padding: { top: 25 } },
               plugins: { 
                   legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } },
                   tooltip: { mode: 'index', intersect: false },
@@ -582,7 +582,7 @@
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
-              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '10%' } }
+              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
           };
 
           // --- คำนวณกราฟงานเกินกำหนดแยกตามทีม (นัดหมายลูกค้า) ---
@@ -597,7 +597,6 @@
                   const match = overDueVal.match(/-?\d+/);
                   if(match) num = parseInt(match[0], 10);
                   
-                  // นับเฉพาะที่เกินกำหนด (มีคำว่าเกิน, over หรือตัวเลขน้อยกว่า 0)
                   if (overDueVal.includes('เกิน') || overDueVal.includes('over') || num < 0) {
                       overdueByTeamCounts[team]++;
                   }
@@ -618,16 +617,16 @@
 
           const overdueChartOptions = {
               responsive: true, maintainAspectRatio: false,
-              layout: { padding: { top: 20 } },
+              layout: { padding: { top: 25 } },
               plugins: { 
-                  legend: { display: false }, // ปิด Legend เพราะมีแค่แท่งสีเดียว
+                  legend: { display: false }, 
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
                       color: '#ef4444', font: { weight: 'bold', size: 12 }, anchor: 'end', align: 'top',
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
-              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '10%' } }
+              scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 }, grace: '20%' } }
           };
 
           // --- Table Filtering Logic ---
@@ -826,6 +825,7 @@
                             <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[300px]">
                                 {chartFilteredTasks.length > 0 ? (
                                     <>
+                                        {/* กราฟโดนัทสมมาตร */}
                                         <div className="relative w-full max-w-[220px] aspect-square flex items-center justify-center">
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                                                 <div className="text-center">
@@ -835,6 +835,7 @@
                                             </div>
                                             <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
                                         </div>
+                                        {/* Custom Legend ที่แยกออกมาเพื่อให้กราฟไม่เบี้ยว */}
                                         <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
                                             {chartSortedStatuses.map(s => (
                                                 <div key={s} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
@@ -857,7 +858,7 @@
                             </div>
                         </div>
 
-                        {/* กราฟปริมาณงานและสถานะแยกตามทีม (ย่อเหลือ 2 ส่วนเพื่อให้พื้นที่กราฟ Overdue) */}
+                        {/* กราฟปริมาณงานและสถานะแยกตามทีม */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3>
@@ -871,7 +872,7 @@
                             </div>
                         </div>
 
-                        {/* กราฟงานเกินกำหนดแยกตามทีม (ใหม่) */}
+                        {/* กราฟงานเกินกำหนดแยกตามทีม */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3>
