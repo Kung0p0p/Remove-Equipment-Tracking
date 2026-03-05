@@ -49,7 +49,6 @@
             border-radius: 4px;
             outline: none;
             transition: all 0.2s;
-            /* แก้ไข: บังคับข้อความบรรทัดเดียว และตัดจบด้วย ... เมื่อลากย่อช่อง */
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -241,7 +240,7 @@
           const [searchTerm, setSearchTerm] = useState('');
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
-          const [colWidths, setColWidths] = useState({}); // เก็บสถานะความกว้างของคอลัมน์
+          const [colWidths, setColWidths] = useState({}); // เพิ่ม State จัดการความกว้าง
 
           // ฟังก์ชันสำหรับลากปรับขนาดคอลัมน์
           const handleMouseDown = (e, col) => {
@@ -251,7 +250,7 @@
               const startWidth = thElement.getBoundingClientRect().width;
 
               const onMouseMove = (moveEvent) => {
-                  const newWidth = Math.max(60, startWidth + (moveEvent.pageX - startX));
+                  const newWidth = Math.max(50, startWidth + (moveEvent.pageX - startX));
                   setColWidths(prev => ({ ...prev, [col]: newWidth }));
               };
 
@@ -265,7 +264,6 @@
           };
 
           const handleDoubleClickResize = (col) => {
-              // ล้างค่าความกว้าง เพื่อให้กลับไปอิงตามข้อความอัตโนมัติ
               setColWidths(prev => {
                   const newWidths = { ...prev };
                   delete newWidths[col];
@@ -1110,30 +1108,27 @@
 
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                       <div className="overflow-x-auto table-container max-h-[60vh]">
-                        {/* ปรับ tableLayout เป็น auto เพื่อให้ตั้งต้นตามข้อความ */}
                         <table className="w-full text-left border-collapse text-sm" style={{ tableLayout: 'auto' }}>
                           <thead className="sticky top-0 z-10 bg-slate-800 shadow-sm">
                             <tr>
-                              {/* กรองเฉพาะคอลัมน์ที่ไม่ได้ถูกซ่อน พร้อมฟังก์ชันลากและดับเบิ้ลคลิก */}
                               {visibleColumns.map((col, idx) => {
                                   const hasFixedWidth = colWidths[col] !== undefined;
                                   return (
                                       <th 
                                           key={idx} 
                                           className="border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none"
-                                          style={hasFixedWidth ? { width: colWidths[col], maxWidth: colWidths[col] } : {}}
+                                          style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
                                       >
                                           <div className="th-content text-sm font-semibold text-white px-4 py-3">
                                               {col}
                                           </div>
-                                          {/* ตัวลากปรับขนาด (Drag Handle) */}
                                           <div 
                                               onMouseDown={(e) => handleMouseDown(e, col)}
                                               onDoubleClick={() => handleDoubleClickResize(col)}
-                                              title="ลากเพื่อปรับขนาด / ดับเบิ้ลคลิกเพื่อจัดขนาดตามข้อความอัตโนมัติ"
-                                              className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
+                                              title="ลากปรับขนาด / ดับเบิ้ลคลิกพอดีข้อความ"
+                                              className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
                                           >
-                                              <div className="w-[2px] h-4 bg-white/60 rounded-full"></div>
+                                              <div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div>
                                           </div>
                                       </th>
                                   );
@@ -1147,9 +1142,8 @@
                                 <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
                             ) : tableTasks.map((task) => (
                               <tr key={task.id} className="hover:bg-slate-50 transition-colors">
-                                {/* กรองเฉพาะคอลัมน์ที่ไม่ได้ถูกซ่อน */}
                                 {visibleColumns.map((col, idx) => {
-                                    const hasFixedWidth = colWidths[col] !== undefined; // เพิ่มบรรทัดนี้เพื่อแก้ไขบั๊กหน้าจอขาว
+                                    const hasFixedWidth = colWidths[col] !== undefined;
                                     const isStatusCell = col === statusCol;
                                     const isTeamCell = col === teamCol;
                                     const isOverDueCell = col === overDueCol; 
@@ -1162,7 +1156,7 @@
                                     if (isStatusCell) {
                                         const color = getStatusColor(cleanVal, 0.1);
                                         const textColor = getStatusColor(cleanVal, 1);
-                                        styleObj = { backgroundColor: color, color: textColor, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                        styleObj = { backgroundColor: color, color: textColor, fontWeight: 'bold', borderRadius: '6px' };
                                     } else if (isTeamCell) {
                                         const tColor = getTeamColorStyle(val);
                                         styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
@@ -1183,19 +1177,47 @@
                                     return (
                                         <td 
                                             key={idx} 
-                                            className="p-2 align-middle border-r border-slate-100"
-                                            style={hasFixedWidth ? { width: colWidths[col], maxWidth: colWidths[col] } : {}}
+                                            className="p-1.5 align-middle border-r border-slate-100 overflow-hidden text-ellipsis"
+                                            style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
                                         >
-                                            <div 
-                                                contentEditable="true"
-                                                suppressContentEditableWarning={true}
-                                                className={cellStyle} 
-                                                style={{ ...styleObj, cursor: 'text' }}
-                                                onBlur={e => handleCellChange(task.id, col, e.target.innerText)} 
-                                                title={val}
-                                            >
-                                                {val}
-                                            </div>
+                                            {isStatusCell ? (
+                                                <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
+                                                    <div 
+                                                        contentEditable="true"
+                                                        suppressContentEditableWarning={true}
+                                                        className="flex-1 px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center"
+                                                        style={{ minHeight: '30px', lineHeight: '22px' }}
+                                                        onBlur={e => handleCellChange(task.id, col, e.target.innerText)}
+                                                        title={val}
+                                                    >
+                                                        {val}
+                                                    </div>
+                                                    <div className="relative w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer" title="เลือกจากสถานะเดิม">
+                                                        <i className="fa-solid fa-chevron-down text-[10px]"></i>
+                                                        <select 
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                            onChange={e => {
+                                                                if (e.target.value) handleCellChange(task.id, col, e.target.value);
+                                                                e.target.value = ''; 
+                                                            }}
+                                                        >
+                                                            <option value="" disabled selected></option>
+                                                            {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div 
+                                                    contentEditable="true"
+                                                    suppressContentEditableWarning={true}
+                                                    className={cellStyle} 
+                                                    style={{ ...styleObj, minHeight: '32px', cursor: 'text' }}
+                                                    onBlur={e => handleCellChange(task.id, col, e.target.innerText)} 
+                                                    title={val}
+                                                >
+                                                    {val}
+                                                </div>
+                                            )}
                                         </td>
                                     )
                                 })}
