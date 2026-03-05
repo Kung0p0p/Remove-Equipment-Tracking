@@ -134,7 +134,7 @@
                 };
             }, [type, data, options]);
 
-            return <canvas ref={chartRef} />;
+            return <canvas ref={chartRef} style={{ width: '100%', height: '100%' }} />;
         };
 
         const defaultSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQYFrvAPjj0jt6NlL6KG64WkCLcPCzw1M1OB0a0Gkuv48knoGTz_iSQkupxQSwzzRJEOht35gWPcHUU/pub?gid=2146282055&single=true&output=csv';
@@ -472,7 +472,7 @@
               if (s.includes('ไม่พบ') || s.includes('หาย')) return 8;
               if (s.includes('เลื่อน')) return 9;
               if (s.includes('ยกเลิก') || s.includes('cancel')) return 10;
-              return 99; // สถานะอื่นๆ ไว้ท้ายสุด
+              return 99; 
           };
 
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => {
@@ -506,8 +506,9 @@
 
           const statusChartOptions = {
               responsive: true, maintainAspectRatio: false, cutout: '75%',
+              layout: { padding: 10 },
               plugins: {
-                  legend: { display: false }, // ปิด Legend ใน Canvas เพื่อสร้างใหม่ด้วย HTML ให้กราฟสมมาตร
+                  legend: { display: false }, // ปิด Legend ใน Canvas เพื่อสร้างด้วย HTML
                   tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 },
                   datalabels: { display: false }
               }
@@ -540,8 +541,8 @@
           const monthlyChartData = {
               labels: monthlyChartLabels,
               datasets: [
-                  { label: 'Collected', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
-                  { label: 'Pending', data: Object.values(monthlyData).map(d => d.remaining), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
+                  { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
+                  { label: 'Pending (CIDs)', data: Object.values(monthlyData).map(d => d.remaining), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
               ]
           };
           const monthlyChartOptions = {
@@ -550,8 +551,9 @@
               plugins: { 
                   legend: { display: true, position: 'top' },
                   datalabels: {
-                      color: '#1e293b', font: { weight: 'bold', size: 12 },
-                      anchor: 'end', align: 'top',
+                      color: '#0f172a', // สีตัวเลขดำเข้มชัดเจน
+                      font: { weight: 'bold', size: 14 },
+                      anchor: 'end', align: 'top', offset: 4,
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               }, 
@@ -578,7 +580,9 @@
                   legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 10 } },
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
-                      color: '#1e293b', font: { weight: 'bold', size: 12 }, anchor: 'end', align: 'top',
+                      color: '#0f172a', // สีตัวเลขดำเข้มชัดเจน
+                      font: { weight: 'bold', size: 14 }, 
+                      anchor: 'end', align: 'top', offset: 4,
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
@@ -606,7 +610,7 @@
           const overdueChartData = {
               labels: activeTeams,
               datasets: [{
-                  label: 'เกินกำหนดนัดหมาย (Sites)',
+                  label: 'เกินกำหนดนัดหมาย (CIDs)',
                   data: activeTeams.map(team => overdueByTeamCounts[team]),
                   backgroundColor: 'rgba(239, 68, 68, 0.8)', // สีแดง
                   borderColor: 'rgba(220, 38, 38, 1)',
@@ -622,7 +626,9 @@
                   legend: { display: false }, 
                   tooltip: { mode: 'index', intersect: false },
                   datalabels: {
-                      color: '#ef4444', font: { weight: 'bold', size: 12 }, anchor: 'end', align: 'top',
+                      color: '#991b1b', // สีตัวเลขแดงเข้มชัดเจน
+                      font: { weight: 'bold', size: 14 }, 
+                      anchor: 'end', align: 'top', offset: 4,
                       display: function(context) { return context.dataset.data[context.dataIndex] > 0; }
                   }
               },
@@ -708,7 +714,6 @@
               columns.find(c => c.toLowerCase().includes('แจ้ง subcontract') || c.includes('แจ้ง Sub')),
               columns.find(c => c.toLowerCase().includes('อีเมล') || c.toLowerCase().includes('email') || c.toLowerCase().includes('mail')),
               columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')),
-              // ซ่อนคอลัมน์ นัดหมายลูกค้า ออกจาก Tooltip เพื่อไม่ให้รก
               columns.find(c => {
                   const lowerC = c.toLowerCase().replace(/\s+/g, '');
                   return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
@@ -825,18 +830,16 @@
                             <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[300px]">
                                 {chartFilteredTasks.length > 0 ? (
                                     <>
-                                        {/* กราฟโดนัทสมมาตร */}
-                                        <div className="relative w-full max-w-[220px] aspect-square flex items-center justify-center">
+                                        {/* ล็อกขนาดกราฟโดนัทให้เท่ากันทุกมุมมอง */}
+                                        <div className="relative mx-auto flex items-center justify-center" style={{ width: '240px', height: '240px' }}>
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                                                <div className="text-center">
-                                                    <span className="text-5xl font-bold text-slate-800 block leading-none">{chartFilteredTasks.length}</span>
-                                                    <span className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1.5 block">CIDs</span>
-                                                </div>
+                                                <span className="text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks.length}</span>
+                                                <span className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span>
                                             </div>
                                             <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
                                         </div>
-                                        {/* Custom Legend ที่แยกออกมาเพื่อให้กราฟไม่เบี้ยว */}
-                                        <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
+                                        {/* Legend ด้านล่าง */}
+                                        <div className="mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
                                             {chartSortedStatuses.map(s => (
                                                 <div key={s} className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
                                                     <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>
