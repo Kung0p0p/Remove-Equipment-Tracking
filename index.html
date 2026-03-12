@@ -77,6 +77,49 @@
 
         const { useState, useEffect, useRef } = React;
 
+        // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่ที่มาจาก Google Sheets (แก้ปัญหาวันที่ยาว) ---
+        const formatSheetDate = (val) => {
+            if (typeof val !== 'string') return val;
+            
+            // ดักจับรูปแบบวันที่ยาวๆ เช่น "Tue Dec 09 2025 16:08:28 GMT+0700 (Indochina Time)"
+            const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT/);
+            
+            if (isLongDate) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    // ถ้าปีเป็น 1899 แปลว่า Google Sheets ตั้งใจส่งมาแค่เวลา (Time only)
+                    if (d.getFullYear() === 1899) {
+                        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                    }
+                    // ถ้าเป็นวันที่ปกติ ให้แปลงเป็น DD/MM/YYYY แบบสั้น
+                    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+                }
+            }
+            return val;
+        };
+
+        // --- ฟังก์ชันช่วยเหลือสำหรับอ่านวันที่เพื่อใช้คำนวณปฏิทินและกราฟ ---
+        const parseDateHelper = (dateStr) => {
+            if (!dateStr || typeof dateStr !== 'string') return null;
+            
+            // อ่านรูปแบบ DD/MM/YYYY หรือ YYYY-MM-DD
+            const match = dateStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
+            if (match) {
+                let d, m, y;
+                if (match[1].length === 4) { y = parseInt(match[1]); m = parseInt(match[2]); d = parseInt(match[3]); } 
+                else { d = parseInt(match[1]); m = parseInt(match[2]); y = parseInt(match[3]); }
+                if (y < 100) y += 2000;
+                if (y > 2500) y -= 543;
+                return new Date(y, m - 1, d);
+            }
+            
+            // อ่านจากรูปแบบปกติสำรอง
+            const dObj = new Date(dateStr);
+            if (!isNaN(dObj.getTime())) return dObj;
+            
+            return null;
+        };
+
         // --- Component เลือกได้หลายค่า (Multi-Select Dropdown) ---
         const MultiSelect = ({ options, selected, onChange, placeholder = "ทั้งหมด" }) => {
             const [isOpen, setIsOpen] = useState(false);
@@ -210,7 +253,7 @@
             return <canvas ref={chartRef} style={{ width: '100%', height: '100%' }} />;
         };
 
-        // ⚠️⚠️⚠️ ใส่ Firebase Config ของคุณตรงนี้ ⚠️⚠️⚠️
+        // ⚠️⚠️⚠️ Firebase Config ของคุณ ⚠️⚠️⚠️
         const firebaseConfig = {
             apiKey: "AIzaSyBzHPhjjxRqcfno1QUkKUZddOPP_pota-Y",
             authDomain: "remove-equipment-tracking.firebaseapp.com",
@@ -221,7 +264,7 @@
             measurementId: "G-DT2FYYWJ26"
         };
 
-        // ⚠️⚠️⚠️ นำลิงก์ Web App จาก Google Apps Script (ขั้นตอนที่ 2) มาวางที่นี่ ⚠️⚠️⚠️
+        // ⚠️⚠️⚠️ ลิงก์ Web App จาก Google Apps Script (Two-way sync) ⚠️⚠️⚠️
         const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1yVkUHzabwRZ4HCe0T6UqPdEFVrKtUkZt6apXYaz7KS51iwe5QjvGmK8f9lYcvyWd/exec"; 
 
         // Initialize Firebase
@@ -237,7 +280,7 @@
           const [activeTab, setActiveTab] = useState('dashboard');
           const [tasks, setTasks] = useState([]);
           const [isLoading, setIsLoading] = useState(true);
-          const [firebaseError, setFirebaseError] = useState(null); // เพิ่ม State สำหรับเก็บ Error
+          const [firebaseError, setFirebaseError] = useState(null); 
           
           // เช็คขนาดหน้าจอเพื่อปรับการแสดงผล Sidebar
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
@@ -319,8 +362,6 @@
               if (savedCols) setColumns(JSON.parse(savedCols));
 
               const unsubscribe = collectionRef.onSnapshot((snapshot) => {
-                  console.log("Firebase Snapshot received, empty:", snapshot.empty, "size:", snapshot.size);
-                  
                   if (snapshot.empty) {
                       setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks' (อาจจะยังไม่ได้ดึงข้อมูลจาก Sheet หรือชื่อ Collection ผิด)");
                       setIsLoading(false);
@@ -332,7 +373,6 @@
                   let metadataCols = null;
 
                   snapshot.forEach((doc) => {
-                      // ดักจับเอกสารพิเศษที่เป็นลำดับคอลัมน์
                       if (doc.id === '_metadata') {
                           metadataCols = doc.data().columns;
                           return;
@@ -343,8 +383,9 @@
                       
                       Object.keys(data).forEach(key => {
                           if (key !== '_rowIndex') {
-                              // ดึงข้อมูลที่ครอบด้วยโครงสร้าง JSON ของ Firebase ออกมา
-                              cleanData[key] = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
+                              let rawValue = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
+                              // ใช้ฟังก์ชันแปลงวันที่ยาวๆ ให้เป็นรูปแบบสั้นอ่านง่าย
+                              cleanData[key] = formatSheetDate(rawValue);
                               allCols.add(key);
                           }
                       });
@@ -352,13 +393,11 @@
                       newTasks.push(cleanData);
                   });
 
-                  // เรียงลำดับตามเลขแถว
                   newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
                   setTasks(newTasks);
                   setFirebaseError(null); 
                   
-                  // อัปเดตคอลัมน์ (ใช้ข้อมูลจาก _metadata เพื่อเรียงให้ตรงกับ Google Sheets)
                   if (metadataCols && Array.isArray(metadataCols)) {
                       setColumns(metadataCols);
                       localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
@@ -373,11 +412,8 @@
               }, (error) => {
                   console.error("Firestore Listen Error:", error);
                   setFirebaseError(`การเชื่อมต่อ Firebase ผิดพลาด: ${error.message}`);
-                  // ถ้าพัง ให้ดึงจากที่เซฟไว้แทนชั่วคราว
                   const savedTasks = localStorage.getItem('equip_tracker_tasks');
-                  if (savedTasks && tasks.length === 0) {
-                      setTasks(JSON.parse(savedTasks));
-                  }
+                  if (savedTasks && tasks.length === 0) setTasks(JSON.parse(savedTasks));
                   setIsLoading(false);
               });
 
@@ -417,7 +453,6 @@
               setTableFilterStatus('All');
               setTableFilterOverdue('All');
               setSearchTerm('');
-              // setHiddenColumns([]); 
           };
 
           // ==========================================
@@ -433,7 +468,6 @@
 
               const apiKey = ""; // <--- Execution environment provides the key automatically
 
-              // กรองข้อมูลเฉพาะที่จำเป็นเพื่อส่งให้ AI (ป้องกัน Token เกินกำหนด)
               const dataContext = tasks.map(t => {
                   const essential = {};
                   if (keyMap.company && t[keyMap.company]) essential.company = t[keyMap.company];
@@ -444,7 +478,6 @@
                   return essential;
               });
 
-              // จำกัดข้อมูล (ส่งข้อมูลไปแค่ 150 แถวเพื่อให้ประมวลผลเร็วและไม่เกินลิมิต)
               const limitedContext = dataContext.slice(0, 150);
 
               const systemPrompt = `คุณคือผู้ช่วย AI อัจฉริยะสำหรับแอปพลิเคชัน "EquipTracker" หน้าที่ของคุณคือการวิเคราะห์และตอบคำถามที่เกี่ยวข้องกับข้อมูลตารางงาน (Equipment Collection) โดยอิงจากข้อมูลรูปแบบ JSON ที่แนบมานี้เท่านั้น: ${JSON.stringify(limitedContext)}. กรุณาตอบเป็นภาษาไทย ให้สั้น กระชับ เข้าใจง่าย และใช้รูปแบบการจัดหน้า (Bullet points, Bold) ให้น่าอ่าน หากคำถามไม่อยู่ในข้อมูล ให้ตอบอย่างสุภาพว่าไม่ทราบข้อมูลส่วนนั้น`;
@@ -493,16 +526,11 @@
               }
           };
 
+          // อัปเดตฟังก์ชันตรวจสอบวันที่สำหรับ Calendar โดยใช้ parseDateHelper เพื่อความแม่นยำ
           const isSameDate = (dateStr, dateObj) => {
-              if (!dateStr || typeof dateStr !== 'string') return false;
-              const match = dateStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
-              if (!match) return false;
-              let d, m, y;
-              if (match[1].length === 4) { y = parseInt(match[1]); m = parseInt(match[2]); d = parseInt(match[3]); } 
-              else { d = parseInt(match[1]); m = parseInt(match[2]); y = parseInt(match[3]); }
-              if (y < 100) y += 2000;
-              if (y > 2500) y -= 543;
-              return d === dateObj.getDate() && m === (dateObj.getMonth() + 1) && y === dateObj.getFullYear();
+              const d = parseDateHelper(dateStr);
+              if (!d || !dateObj) return false;
+              return d.getDate() === dateObj.getDate() && d.getMonth() === dateObj.getMonth() && d.getFullYear() === dateObj.getFullYear();
           };
 
           const fallbackTeamColors = [
@@ -536,7 +564,6 @@
           // แก้ไขเซลล์ แล้วเซฟลง Firebase
           // ==========================================
           const handleCellChange = async (id, field, value) => {
-              // เปลี่ยนหน้าตาก่อนเพื่อความรวดเร็ว (Optimistic UI)
               const previousTasks = [...tasks];
               setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               
@@ -545,11 +572,11 @@
                   await collectionRef.doc(id).set({ [field]: value }, { merge: true });
                   
                   // 2. ยิงคำสั่งไปหา Google Sheet เพื่ออัปเดตข้อมูลแบบ Two-way sync
-                  if (GAS_WEB_APP_URL && GAS_WEB_APP_URL !== "ใส่ลิงก์ของคุณที่นี่") {
+                  if (GAS_WEB_APP_URL) {
                       const rowNum = id.replace('task_', ''); // เอาเลขแถวออกมา
                       fetch(GAS_WEB_APP_URL, {
                           method: 'POST',
-                          mode: 'no-cors', // สำคัญ: ซ่อน Error CORS
+                          mode: 'no-cors', // ซ่อน Error CORS
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ row: rowNum, field: field, value: value })
                       }).catch(e => console.error("Sync to Sheet failed:", e));
@@ -557,7 +584,7 @@
                   
               } catch (e) {
                   console.error("Error updating document: ", e);
-                  setTasks(previousTasks); // ย้อนกลับถ้าเซฟพัง
+                  setTasks(previousTasks); 
                   alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
               }
           };
@@ -568,7 +595,6 @@
               let x = e.clientX + 15;
               let y = e.clientY + 15;
               
-              // ป้องกัน Tooltip ทะลุขอบจอบนมือถือ/หน้าจอเล็ก
               if (x + tooltipWidth > window.innerWidth) x = Math.max(10, window.innerWidth - tooltipWidth - 15);
               if (y + tooltipHeight > window.innerHeight) y = Math.max(10, window.innerHeight - tooltipHeight - 10);
               
@@ -599,10 +625,10 @@
               
               const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
               let m = null;
-              if (dStr) {
-                  const match = dStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
-                  if (match) m = parseInt(match[2]);
-              }
+              
+              // ใช้วิธี parse แบบใหม่ที่แม่นยำขึ้น
+              const parsedD = parseDateHelper(dStr);
+              if (parsedD) m = parsedD.getMonth() + 1;
 
               const eqYearStr = equipYearCol && t[equipYearCol] ? String(t[equipYearCol]).trim() : '';
               let y = null;
@@ -629,10 +655,8 @@
           });
 
           const uniqueMonths = [...new Set(baseFilteredTasks.map(t => {
-              const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
-              if(!dStr) return null;
-              const match = dStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
-              return match ? parseInt(match[2], 10) : null;
+              const parsedD = parseDateHelper(t[dateCol]);
+              return parsedD ? parsedD.getMonth() + 1 : null;
           }).filter(Boolean))].sort((a,b)=>a-b);
 
           const uniqueCIDs = cidCol ? [...new Set(tasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
@@ -739,16 +763,8 @@
           for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, remaining: 0 };
           
           chartFilteredTasks.forEach(t => {
-              const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
-              let m = null;
-              if (dStr) {
-                  const match = dStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
-                  if (match) {
-                      m = parseInt(match[2]);
-                      if (match[1].length === 4) m = parseInt(match[2]); 
-                  }
-              }
-              if (!m || m < 1 || m > 12) m = new Date().getMonth() + 1; 
+              const parsedD = parseDateHelper(t[dateCol]);
+              let m = parsedD ? parsedD.getMonth() + 1 : new Date().getMonth() + 1; 
 
               const s = getCleanStatus(t[statusCol]).toLowerCase();
               const isCollected = s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%');
