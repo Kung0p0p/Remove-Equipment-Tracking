@@ -221,6 +221,9 @@
             measurementId: "G-DT2FYYWJ26"
         };
 
+        // ⚠️⚠️⚠️ นำลิงก์ Web App จาก Google Apps Script (ขั้นตอนที่ 2) มาวางที่นี่ ⚠️⚠️⚠️
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1yVkUHzabwRZ4HCe0T6UqPdEFVrKtUkZt6apXYaz7KS51iwe5QjvGmK8f9lYcvyWd/exec"; 
+
         // Initialize Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
@@ -234,6 +237,7 @@
           const [activeTab, setActiveTab] = useState('dashboard');
           const [tasks, setTasks] = useState([]);
           const [isLoading, setIsLoading] = useState(true);
+          const [firebaseError, setFirebaseError] = useState(null); // เพิ่ม State สำหรับเก็บ Error
           
           // เช็คขนาดหน้าจอเพื่อปรับการแสดงผล Sidebar
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
@@ -310,21 +314,37 @@
           // ==========================================
           useEffect(() => {
               setIsLoading(true);
+              setFirebaseError(null);
               const savedCols = localStorage.getItem('equip_tracker_columns');
               if (savedCols) setColumns(JSON.parse(savedCols));
 
               const unsubscribe = collectionRef.onSnapshot((snapshot) => {
+                  console.log("Firebase Snapshot received, empty:", snapshot.empty, "size:", snapshot.size);
+                  
+                  if (snapshot.empty) {
+                      setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks' (อาจจะยังไม่ได้ดึงข้อมูลจาก Sheet หรือชื่อ Collection ผิด)");
+                      setIsLoading(false);
+                      return;
+                  }
+
                   const newTasks = [];
                   let allCols = new Set(columns);
+                  let metadataCols = null;
 
                   snapshot.forEach((doc) => {
+                      // ดักจับเอกสารพิเศษที่เป็นลำดับคอลัมน์
+                      if (doc.id === '_metadata') {
+                          metadataCols = doc.data().columns;
+                          return;
+                      }
+
                       const data = doc.data();
                       const cleanData = { id: doc.id };
                       
                       Object.keys(data).forEach(key => {
                           if (key !== '_rowIndex') {
-                              // รองรับทั้งโครงสร้างแบบซ้อนจาก REST API และแบบธรรมดา
-                              cleanData[key] = data[key]?.stringValue ?? data[key] ?? '';
+                              // ดึงข้อมูลที่ครอบด้วยโครงสร้าง JSON ของ Firebase ออกมา
+                              cleanData[key] = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
                               allCols.add(key);
                           }
                       });
@@ -336,9 +356,13 @@
                   newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
                   setTasks(newTasks);
+                  setFirebaseError(null); 
                   
-                  // อัปเดตคอลัมน์หากเจอคอลัมน์ใหม่
-                  if (allCols.size > columns.length) {
+                  // อัปเดตคอลัมน์ (ใช้ข้อมูลจาก _metadata เพื่อเรียงให้ตรงกับ Google Sheets)
+                  if (metadataCols && Array.isArray(metadataCols)) {
+                      setColumns(metadataCols);
+                      localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
+                  } else if (allCols.size > columns.length) {
                       const colsArray = Array.from(allCols);
                       setColumns(colsArray);
                       localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
@@ -348,7 +372,8 @@
                   setIsLoading(false);
               }, (error) => {
                   console.error("Firestore Listen Error:", error);
-                  // ถ้าพัง ให้ดึงจากที่เซฟไว้แทน
+                  setFirebaseError(`การเชื่อมต่อ Firebase ผิดพลาด: ${error.message}`);
+                  // ถ้าพัง ให้ดึงจากที่เซฟไว้แทนชั่วคราว
                   const savedTasks = localStorage.getItem('equip_tracker_tasks');
                   if (savedTasks && tasks.length === 0) {
                       setTasks(JSON.parse(savedTasks));
@@ -516,15 +541,24 @@
               setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               
               try {
-                  const updateData = {};
-                  // สร้าง Payload ให้ตรงกับรูปแบบที่ส่งมาจาก Google Apps Script
-                  updateData[field] = { stringValue: value };
+                  // 1. อัปเดตลง Firebase Firestore
+                  await collectionRef.doc(id).set({ [field]: value }, { merge: true });
                   
-                  await collectionRef.doc(id).set(updateData, { merge: true });
+                  // 2. ยิงคำสั่งไปหา Google Sheet เพื่ออัปเดตข้อมูลแบบ Two-way sync
+                  if (GAS_WEB_APP_URL && GAS_WEB_APP_URL !== "ใส่ลิงก์ของคุณที่นี่") {
+                      const rowNum = id.replace('task_', ''); // เอาเลขแถวออกมา
+                      fetch(GAS_WEB_APP_URL, {
+                          method: 'POST',
+                          mode: 'no-cors', // สำคัญ: ซ่อน Error CORS
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ row: rowNum, field: field, value: value })
+                      }).catch(e => console.error("Sync to Sheet failed:", e));
+                  }
+                  
               } catch (e) {
                   console.error("Error updating document: ", e);
                   setTasks(previousTasks); // ย้อนกลับถ้าเซฟพัง
-                  alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+                  alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
               }
           };
 
@@ -981,11 +1015,13 @@
 
                 </nav>
                 {/* เปลี่ยนปุ่ม Fetch เป็นสถานะ Sync */}
-                <div className="p-4 mt-auto border-t border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-center gap-2 text-slate-300 text-sm font-medium">
+                <div className="p-4 mt-auto border-t border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-center gap-2 text-sm font-medium">
                   {isLoading ? (
-                      <><i className="fa-solid fa-circle-notch fa-spin text-blue-500"></i> กำลังซิงค์ข้อมูล...</>
+                      <span className="text-blue-400"><i className="fa-solid fa-circle-notch fa-spin"></i> กำลังซิงค์ข้อมูล...</span>
+                  ) : firebaseError ? (
+                      <span className="text-red-400 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> พบปัญหาการเชื่อมต่อ</span>
                   ) : (
-                      <><i className="fa-solid fa-cloud-check text-emerald-500"></i> ซิงค์เรียลไทม์แล้ว</>
+                      <span className="text-emerald-500"><i className="fa-solid fa-cloud-check"></i> ซิงค์เรียลไทม์แล้ว</span>
                   )}
                 </div>
               </aside>
@@ -1031,6 +1067,18 @@
                         </div>
                       </div>
                     </header>
+                    
+                    {firebaseError && (
+                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
+                            <div className="flex items-center">
+                                <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
+                                <div>
+                                    <p className="text-red-700 font-bold">เกิดข้อผิดพลาดในการดึงข้อมูล</p>
+                                    <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex flex-nowrap overflow-x-auto gap-3 md:gap-4 pb-4 pt-3 px-2 custom-scrollbar w-full">
                         <div className="bg-slate-800 text-white p-3 md:p-4 rounded-xl shadow-md border border-slate-700 flex-shrink-0 min-w-[120px] md:min-w-[160px] flex flex-col items-center justify-center gap-1 md:gap-2">
@@ -1142,6 +1190,18 @@
                       </div>
                     </header>
 
+                    {firebaseError && (
+                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
+                            <div className="flex items-center">
+                                <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
+                                <div>
+                                    <p className="text-red-700 font-bold">ไม่สามารถดึงข้อมูลตารางได้</p>
+                                    <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 md:space-y-4">
                         <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                             <div className="relative w-full">
@@ -1205,7 +1265,7 @@
                         <table className="w-full text-left border-collapse text-sm" style={{ tableLayout: 'auto' }}>
                           <thead className="sticky top-0 z-10 bg-slate-800 shadow-sm">
                             <tr>
-                              {visibleColumns.map((col, idx) => {
+                              {visibleColumns.length > 0 ? visibleColumns.map((col, idx) => {
                                   const hasFixedWidth = colWidths[col] !== undefined;
                                   return (
                                       <th 
@@ -1226,14 +1286,20 @@
                                           </div>
                                       </th>
                                   );
-                              })}
+                              }) : (
+                                  <th className="p-4 text-white">ตารางงาน</th>
+                              )}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {tasks.length === 0 ? (
-                                <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-slate-500">กำลังเชื่อมต่อ หรือ ยังไม่มีข้อมูล...</td></tr>
+                            {isLoading ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
+                            ) : firebaseError ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-red-500"><i className="fa-solid fa-triangle-exclamation mr-2"></i>ไม่พบข้อมูล กรุณาตรวจสอบการตั้งค่า Firebase</td></tr>
+                            ) : tasks.length === 0 ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า (รอการซิงค์ข้อมูลจาก Sheet)</td></tr>
                             ) : tableTasks.length === 0 ? (
-                                <tr><td colSpan={visibleColumns.length} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
                             ) : tableTasks.map((task) => (
                               <tr key={task.id} className="hover:bg-slate-50 transition-colors">
                                 {visibleColumns.map((col, idx) => {
