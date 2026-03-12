@@ -77,46 +77,68 @@
 
         const { useState, useEffect, useRef } = React;
 
-        // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่ที่มาจาก Google Sheets (แก้ปัญหาวันที่ยาว) ---
+        // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่ที่มาจาก Google Sheets ---
         const formatSheetDate = (val) => {
             if (typeof val !== 'string') return val;
-            
-            // ดักจับรูปแบบวันที่ยาวๆ เช่น "Tue Dec 09 2025 16:08:28 GMT+0700 (Indochina Time)"
-            const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT/);
+            const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/);
             
             if (isLongDate) {
                 const d = new Date(val);
                 if (!isNaN(d.getTime())) {
-                    // ถ้าปีเป็น 1899 แปลว่า Google Sheets ตั้งใจส่งมาแค่เวลา (Time only)
                     if (d.getFullYear() === 1899) {
                         return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
                     }
-                    // ถ้าเป็นวันที่ปกติ ให้แปลงเป็น DD/MM/YYYY แบบสั้น
-                    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+                    // เติมเลข 0 ข้างหน้าให้เป็น DD/MM/YYYY เสมอเพื่อป้องกันความสับสน
+                    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
                 }
             }
             return val;
         };
 
-        // --- ฟังก์ชันช่วยเหลือสำหรับอ่านวันที่เพื่อใช้คำนวณปฏิทินและกราฟ ---
+        // --- ฟังก์ชันช่วยเหลือสำหรับอ่านวันที่ฉบับสมบูรณ์ (อึดและทนต่อทุกฟอร์แมต) ---
         const parseDateHelper = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return null;
             
-            // อ่านรูปแบบ DD/MM/YYYY หรือ YYYY-MM-DD
-            const match = dateStr.match(/(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})/);
+            // 1. ตัดช่องว่างและเวลาออกทั้งหมด เพื่อให้เหลือแค่วันที่ล้วนๆ
+            let str = dateStr.trim().split(/[\sT]+/)[0]; 
+            if (!str) return null;
+            
+            // 2. ค้นหารูปแบบ DD/MM/YYYY หรือ MM/DD/YYYY (รองรับปี 2 หลักและ 4 หลัก)
+            let match = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
             if (match) {
-                let d, m, y;
-                if (match[1].length === 4) { y = parseInt(match[1]); m = parseInt(match[2]); d = parseInt(match[3]); } 
-                else { d = parseInt(match[1]); m = parseInt(match[2]); y = parseInt(match[3]); }
-                if (y < 100) y += 2000;
+                let d = parseInt(match[1], 10);
+                let m = parseInt(match[2], 10);
+                let y = parseInt(match[3], 10);
+                
+                // จัดการปี (Year) ให้อยู่ในรูปแบบ ค.ศ. (4 หลัก) เสมอ
+                if (y < 100) {
+                    if (y > 40) y += 2500; // เช่น 69 ให้กลายเป็น 2569
+                    else y += 2000; // เช่น 26 ให้กลายเป็น 2026
+                }
+                if (y > 2500) y -= 543; // แปลง พ.ศ. เป็น ค.ศ.
+                
+                // สลับเดือนกับวันถ้าผู้ใช้กรอกเดือนเกิน 12 
+                if (m > 12 && d <= 12) {
+                    let temp = d; d = m; m = temp;
+                }
+                
+                return new Date(y, m - 1, d);
+            }
+
+            // 3. อ่านรูปแบบ YYYY-MM-DD
+            match = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+            if (match) {
+                let y = parseInt(match[1], 10);
+                let m = parseInt(match[2], 10);
+                let d = parseInt(match[3], 10);
                 if (y > 2500) y -= 543;
                 return new Date(y, m - 1, d);
             }
             
-            // อ่านจากรูปแบบปกติสำรอง
-            const dObj = new Date(dateStr);
+            // 4. อ่านจากรูปแบบปกติสำรอง 
+            const dObj = new Date(str);
             if (!isNaN(dObj.getTime())) return dObj;
-            
+
             return null;
         };
 
@@ -421,25 +443,25 @@
               // eslint-disable-next-line react-hooks/exhaustive-deps
           }, []);
 
-          // ประมวลผล KeyMap อัตโนมัติเมื่อ Columns เปลี่ยนแปลง
+          // ประมวลผล KeyMap อัตโนมัติเมื่อ Columns เปลี่ยนแปลง (ปรับการหาชื่อคอลัมน์ให้แม่นขึ้น)
           useEffect(() => {
               if (columns.length > 0) {
                   const findCol = (keywords) => columns.find(c => keywords.some(kw => c.toLowerCase().includes(kw.toLowerCase()))) || '';
+                  
+                  // ดึงคอลัมน์หลักเพื่อใช้ Fallback
                   const colB = columns.length > 1 ? columns[1] : '';
                   const colC = columns.length > 2 ? columns[2] : '';
-                  const colD = columns.length > 3 ? columns[3] : '';
-                  const colE = columns.length > 4 ? columns[4] : '';
-                  const colF = columns.length > 5 ? columns[5] : '';
                   const colG = columns.length > 6 ? columns[6] : '';
                   const statusCol = findCol(['สถานะ', 'status']) || columns[columns.length - 1] || '';
 
+                  // แก้ปัญหากราฟนับทีมผิด โดยเจาะจงหาคอลัมน์จากคีย์เวิร์ดก่อน
                   setKeyMap({
-                      colB, colC, colD, colE, colF, colG,
-                      date: colF || columns[0],
+                      colB, colC,
+                      date: findCol(['วันที่', 'date', 'เวลา']) || columns[0],
                       status: statusCol,
-                      team: colB || findCol(['ทีม', 'subcontract', 'รับผิดชอบ']),
-                      company: colC || findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร']),
-                      time: colG || findCol(['เวลา', 'time'])
+                      team: findCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || colB,
+                      company: findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ']) || colC,
+                      time: findCol(['เวลา', 'time', 'นัด']) || colG
                   });
               }
           }, [columns]);
@@ -526,7 +548,7 @@
               }
           };
 
-          // อัปเดตฟังก์ชันตรวจสอบวันที่สำหรับ Calendar โดยใช้ parseDateHelper เพื่อความแม่นยำ
+          // อัปเดตฟังก์ชันตรวจสอบวันที่สำหรับ Calendar โดยใช้ parseDateHelper
           const isSameDate = (dateStr, dateObj) => {
               const d = parseDateHelper(dateStr);
               if (!d || !dateObj) return false;
@@ -618,15 +640,33 @@
               return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
           }) || '';
 
+          // ฟังก์ชันสำหรับค้นหาคอลัมน์วันที่เข้าเก็บอย่างแม่นยำ
+          const getCollectionDateCol = () => {
+              return columns.find(c => c.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
+          };
+
+          // --- ฟังก์ชันหลักสำหรับหาวันที่ที่ถูกต้องของงาน (สำหรับกราฟ) ---
+          const getTaskEffectiveDateStr = (t) => {
+              const targetCol = getCollectionDateCol();
+              let dateStr = targetCol ? t[targetCol] : null;
+              
+              // หากยังไม่มีข้อมูลวันที่เข้าเก็บ ให้ยึดตาม "วันที่ปัจจุบัน (วันนี้)"
+              if (!dateStr || String(dateStr).trim() === '') {
+                  const today = new Date();
+                  dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+              }
+              return dateStr;
+          };
+
           const uniqueTeams = teamCol ? [...new Set(tasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
           
           const baseFilteredTasks = tasks.filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
               
-              const dStr = t[dateCol] ? String(t[dateCol]).trim() : '';
+              // ใช้วันที่แบบเดียวกับที่ใช้คำนวณกราฟ
+              const dStr = getTaskEffectiveDateStr(t);
               let m = null;
               
-              // ใช้วิธี parse แบบใหม่ที่แม่นยำขึ้น
               const parsedD = parseDateHelper(dStr);
               if (parsedD) m = parsedD.getMonth() + 1;
 
@@ -654,8 +694,9 @@
               return matchMonth && matchTeam && matchYearView;
           });
 
-          const uniqueMonths = [...new Set(baseFilteredTasks.map(t => {
-              const parsedD = parseDateHelper(t[dateCol]);
+          // ดึงรายชื่อเดือนแบบไม่ซ้ำจากข้อมูลตารางทั้งหมดเสมอ (เพื่อให้เปลี่ยนเดือนไปมาได้อิสระ)
+          const uniqueMonths = [...new Set(tasks.map(t => {
+              const parsedD = parseDateHelper(getTaskEffectiveDateStr(t));
               return parsedD ? parsedD.getMonth() + 1 : null;
           }).filter(Boolean))].sort((a,b)=>a-b);
 
@@ -759,18 +800,28 @@
               }
           };
 
+          // กราฟรายเดือน: กรองเฉพาะข้อมูลที่มีวันที่สมบูรณ์ และไม่มีการปัดไปเดือนปัจจุบัน
           const monthlyData = {};
-          for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, remaining: 0 };
+          for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0 };
           
           chartFilteredTasks.forEach(t => {
-              const parsedD = parseDateHelper(t[dateCol]);
-              let m = parsedD ? parsedD.getMonth() + 1 : new Date().getMonth() + 1; 
-
-              const s = getCleanStatus(t[statusCol]).toLowerCase();
-              const isCollected = s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%');
-              
-              if (isCollected) monthlyData[m].collected++;
-              else monthlyData[m].remaining++;
+              const effectiveDateStr = getTaskEffectiveDateStr(t);
+              const parsedD = parseDateHelper(effectiveDateStr);
+              if (parsedD) {
+                  let m = parsedD.getMonth() + 1;
+                  if (m >= 1 && m <= 12) {
+                      const s = getCleanStatus(t[statusCol]).toLowerCase();
+                      
+                      const isCollected = s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%');
+                      
+                      // ถ้ารวมสถานะอื่นทั้งหมดเป็น Ongoing
+                      if (isCollected) {
+                          monthlyData[m].collected++;
+                      } else {
+                          monthlyData[m].ongoing++;
+                      }
+                  }
+              }
           });
 
           const shortMonthNames = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
@@ -779,7 +830,7 @@
               labels: monthlyChartLabels,
               datasets: [
                   { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
-                  { label: 'Pending (CIDs)', data: Object.values(monthlyData).map(d => d.remaining), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
+                  { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 }
               ]
           };
           const monthlyChartOptions = {
@@ -924,10 +975,18 @@
           
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
+              
+              // สำหรับปฏิทิน ยึดคอลัมน์ "วันที่เข้าเก็บ" เท่านั้น ไม่มีตัวตายตัวแทน
+              const targetCol = getCollectionDateCol();
+
               let filteredTasks = tasks.filter(t => {
-                  const matchF = keyMap.colF && isSameDate(t[keyMap.colF], dateObj);
-                  const matchG = keyMap.colG && isSameDate(t[keyMap.colG], dateObj);
-                  return matchF || matchG;
+                  let dateStr = targetCol ? t[targetCol] : null;
+                  
+                  // ถ้าช่องวันที่เข้าเก็บว่างเปล่า ให้ข้ามไปเลย (ไม่แสดงในปฏิทิน)
+                  if (!dateStr || String(dateStr).trim() === '') {
+                      return false;
+                  }
+                  return isSameDate(dateStr, dateObj);
               });
 
               filteredTasks.sort((a, b) => {
@@ -966,9 +1025,9 @@
           const weekSlots = getWeekDays(currentDate);
 
           const SidebarItem = ({ iconClass, label, id }) => (
-            <button onClick={() => { setActiveTab(id); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-              <i className={`${iconClass} text-lg w-6 text-center`}></i>
-              <span className="font-medium whitespace-nowrap">{label}</span>
+            <button onClick={() => { setActiveTab(id); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+              <i className={`${iconClass} text-lg w-6 text-center ${activeTab === id ? 'text-blue-600' : 'opacity-70'}`}></i>
+              <span className="whitespace-nowrap">{label}</span>
             </button>
           );
 
@@ -1002,21 +1061,27 @@
                   <div className="fixed inset-0 bg-slate-900/50 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>
               )}
 
-              <aside className={`bg-slate-900 text-white flex flex-col shadow-xl z-30 shrink-0 transition-all duration-300 ease-in-out absolute md:relative h-full ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 overflow-hidden'}`}>
-                <div className="p-6 h-20 flex items-center">
-                  <h1 className="text-xl font-bold flex items-center gap-2 whitespace-nowrap"><i className="fa-solid fa-truck-fast text-blue-400"></i><span>EquipTracker</span></h1>
+              {/* ธีมเมนูด้านซ้ายสีสว่าง คลีนและสบายตาขึ้น */}
+              <aside className={`bg-white text-slate-800 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.05)] z-30 shrink-0 transition-all duration-300 ease-in-out absolute md:relative h-full ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 overflow-hidden'} border-r border-slate-200`}>
+                <div className="p-6 h-auto min-h-[80px] flex items-center border-b border-slate-100">
+                  <h1 className="text-base md:text-lg font-bold flex items-center gap-3 leading-snug whitespace-normal">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                          <i className="fa-solid fa-truck-fast text-xl"></i>
+                      </div>
+                      <span>Remove Equipment Tracking</span>
+                  </h1>
                 </div>
-                <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
+                <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
                   <div className="space-y-1">
-                    <button onClick={() => { setActiveTab('dashboard'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                      <i className="fa-solid fa-chart-pie text-lg w-6 text-center"></i>
-                      <span className="font-medium whitespace-nowrap">ภาพรวม (Dashboard)</span>
+                    <button onClick={() => { setActiveTab('dashboard'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+                      <i className={`fa-solid fa-chart-pie text-lg w-6 text-center ${activeTab === 'dashboard' ? 'text-blue-600' : 'opacity-70'}`}></i>
+                      <span className="whitespace-nowrap">ภาพรวม (Dashboard)</span>
                     </button>
                     {activeTab === 'dashboard' && isSidebarOpen && (
-                        <div className="pl-12 pr-4 space-y-1 pb-2">
-                            <button onClick={() => { setDashboardView('overview'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'overview' ? 'bg-slate-800 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>- ภาพรวมทั้งหมด</button>
-                            <button onClick={() => { setDashboardView('2026'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === '2026' ? 'bg-slate-800 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
-                            <button onClick={() => { setDashboardView('history'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'history' ? 'bg-slate-800 text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>- ปี 2018 - 2025</button>
+                        <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
+                            <button onClick={() => { setDashboardView('overview'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
+                            <button onClick={() => { setDashboardView('2026'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === '2026' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
+                            <button onClick={() => { setDashboardView('history'); if(window.innerWidth <= 768) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'history' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2018 - 2025</button>
                         </div>
                     )}
                   </div>
@@ -1025,19 +1090,18 @@
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
                   
                   {/* เพิ่มเมนู ผู้ช่วย AI (Gemini) */}
-                  <div className="pt-2 mt-2 border-t border-slate-700/50">
-                    <SidebarItem id="ai" iconClass="fa-solid fa-sparkles text-amber-400" label="ผู้ช่วย AI (Gemini)" />
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <SidebarItem id="ai" iconClass="fa-solid fa-sparkles !text-amber-500" label="ผู้ช่วย AI (Gemini)" />
                   </div>
 
                 </nav>
-                {/* เปลี่ยนปุ่ม Fetch เป็นสถานะ Sync */}
-                <div className="p-4 mt-auto border-t border-slate-800 bg-slate-900/90 backdrop-blur flex items-center justify-center gap-2 text-sm font-medium">
+                <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium">
                   {isLoading ? (
-                      <span className="text-blue-400"><i className="fa-solid fa-circle-notch fa-spin"></i> กำลังซิงค์ข้อมูล...</span>
+                      <span className="text-blue-500"><i className="fa-solid fa-circle-notch fa-spin"></i> กำลังซิงค์ข้อมูล...</span>
                   ) : firebaseError ? (
-                      <span className="text-red-400 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> พบปัญหาการเชื่อมต่อ</span>
+                      <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> พบปัญหาการเชื่อมต่อ</span>
                   ) : (
-                      <span className="text-emerald-500"><i className="fa-solid fa-cloud-check"></i> ซิงค์เรียลไทม์แล้ว</span>
+                      <span className="text-emerald-600"><i className="fa-solid fa-cloud-check"></i> ซิงค์เรียลไทม์แล้ว</span>
                   )}
                 </div>
               </aside>
@@ -1450,9 +1514,9 @@
 
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                       {calendarView === 'month' && (
-                        <div className="grid grid-cols-7 gap-px bg-slate-200">
+                        <div className="grid grid-cols-7 border-l border-t border-slate-200">
                           {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((d, i) => (
-                            <div key={d} className="bg-slate-50 py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600">
+                            <div key={d} className="bg-slate-50 py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600 border-r border-b border-slate-200">
                                 <span className="md:hidden">{d}</span>
                                 <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][i]}</span>
                             </div>
@@ -1460,14 +1524,14 @@
                           {monthSlots.map((dateObj, idx) => {
                             const dayTasks = getTasksForDateObj(dateObj);
                             return (
-                              <div key={idx} className="bg-white min-h-[100px] md:min-h-[140px] p-1 md:p-2 flex flex-col">
+                              <div key={idx} className="bg-white min-h-[100px] md:min-h-[140px] p-1 md:p-2 flex flex-col border-r border-b border-slate-200 group hover:bg-slate-50/50 transition-colors">
                                 {dateObj && (
                                   <>
                                     <div className="text-right mb-0.5 md:mb-1">
                                       <span 
                                         onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
                                         title="คลิกเพื่อดูรายละเอียดรายวัน"
-                                        className={`inline-block w-6 h-6 md:w-7 md:h-7 leading-6 md:leading-7 text-center rounded-full text-xs md:text-sm font-semibold cursor-pointer hover:scale-110 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 bg-slate-100 hover:bg-blue-100 hover:text-blue-700 transition-all'}`}
+                                        className={`inline-block w-6 h-6 md:w-7 md:h-7 leading-6 md:leading-7 text-center rounded-full text-xs md:text-sm font-semibold cursor-pointer hover:scale-110 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 bg-slate-100 group-hover:bg-blue-100 group-hover:text-blue-700 transition-all'}`}
                                       >
                                         {dateObj.getDate()}
                                       </span>
@@ -1477,7 +1541,7 @@
                                           const bg = getStatusColor(t[statusCol] || '', 0.1);
                                           const border = getStatusColor(t[statusCol] || '', 1);
                                           return (
-                                            <div key={t.id} style={{backgroundColor: bg, borderColor: border}} className="p-1 md:p-1.5 rounded-lg border-l-2 md:border-l-4 shadow-sm text-[10px] md:text-xs space-y-0.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
+                                            <div key={t.id} style={{backgroundColor: bg, borderColor: border}} className="p-1 md:p-1.5 rounded-lg border-l-2 md:border-l-4 shadow-sm text-[10px] md:text-xs space-y-0.5 cursor-pointer hover:shadow-md transition-shadow bg-white" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
                                               {compCol && <div className="font-bold text-slate-800 truncate" title={t[compCol]}>{t[compCol]}</div>}
                                               {keyMap.colB && <div className="text-[8px] md:text-[10px] text-slate-600 truncate">{t[keyMap.colB]}</div>}
                                               <div className="text-[8px] md:text-[10px] font-semibold mt-1 truncate" style={{color: border}}>[{t[statusCol]}]</div>
@@ -1494,9 +1558,9 @@
                       )}
 
                       {calendarView === 'week' && (
-                        <div className="grid grid-cols-7 gap-px bg-slate-200">
+                        <div className="grid grid-cols-7 border-l border-t border-slate-200">
                           {weekSlots.map((dateObj, idx) => (
-                            <div key={idx} className="bg-slate-50 py-2 md:py-3 text-center border-b border-slate-200">
+                            <div key={idx} className="bg-slate-50 py-2 md:py-3 text-center border-r border-b border-slate-200">
                               <div className="text-[10px] md:text-sm font-semibold text-slate-500">
                                   <span className="md:hidden">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dateObj.getDay()]}</span>
                                   <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][dateObj.getDay()]}</span>
@@ -1513,7 +1577,7 @@
                           {weekSlots.map((dateObj, idx) => {
                             const dayTasks = getTasksForDateObj(dateObj);
                             return (
-                              <div key={`w-${idx}`} className="bg-white min-h-[300px] md:min-h-[500px] p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/50">
+                              <div key={`w-${idx}`} className="bg-white min-h-[300px] md:min-h-[500px] p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200">
                                 {dayTasks.map(t => {
                                     const border = getStatusColor(t[statusCol] || '', 1);
                                     const softBg = getStatusColor(t[statusCol] || '', 0.1);
