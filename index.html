@@ -30,7 +30,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 
     <style>
-        body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; }
+        /* ล็อกหน้าจอ PC ให้พอดีกรอบ */
+        body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; overflow: hidden; height: 100vh; }
+        #root { height: 100%; }
         
         .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
         .table-container::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
@@ -54,9 +56,11 @@
             overflow: hidden;
             text-overflow: ellipsis;
             display: block;
+            cursor: pointer;
         }
         .editable-cell:hover { border-color: #e2e8f0; background: #f8fafc; }
-        .editable-cell:focus { border-color: #3b82f6; background: #ffffff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+        /* สไตล์ตอนที่กำลังแก้ไข (Double-click) */
+        .editable-cell.editing { border-color: #3b82f6; background: #ffffff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); cursor: text; }
         
         /* สไตล์สำหรับหัวตาราง */
         .th-content {
@@ -65,6 +69,9 @@
             white-space: nowrap;
             padding-right: 16px;
         }
+
+        .sortable-header { cursor: pointer; transition: background 0.2s; position: relative; }
+        .sortable-header:hover { background-color: #334155 !important; }
     </style>
 </head>
 <body>
@@ -75,57 +82,45 @@
             Chart.register(ChartDataLabels);
         }
 
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
-        // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่ที่มาจาก Google Sheets ---
+        // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่และเวลา ---
         const formatSheetDate = (val) => {
             if (typeof val !== 'string') return val;
-            const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/);
             
+            const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/) || val.match(/^\d{4}-\d{2}-\d{2}T/);
             if (isLongDate) {
                 const d = new Date(val);
                 if (!isNaN(d.getTime())) {
                     if (d.getFullYear() === 1899) {
-                        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                        let h = d.getUTCHours() + 7;
+                        if (h >= 24) h -= 24;
+                        let m = d.getUTCMinutes();
+                        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
                     }
-                    // เติมเลข 0 ข้างหน้าให้เป็น DD/MM/YYYY เสมอเพื่อป้องกันความสับสน
                     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
                 }
             }
             return val;
         };
 
-        // --- ฟังก์ชันช่วยเหลือสำหรับอ่านวันที่ฉบับสมบูรณ์ (อึดและทนต่อทุกฟอร์แมต) ---
         const parseDateHelper = (dateStr) => {
             if (!dateStr || typeof dateStr !== 'string') return null;
-            
-            // 1. ตัดช่องว่างและเวลาออกทั้งหมด เพื่อให้เหลือแค่วันที่ล้วนๆ
             let str = dateStr.trim().split(/[\sT]+/)[0]; 
             if (!str) return null;
             
-            // 2. ค้นหารูปแบบ DD/MM/YYYY หรือ MM/DD/YYYY (รองรับปี 2 หลักและ 4 หลัก)
             let match = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
             if (match) {
                 let d = parseInt(match[1], 10);
                 let m = parseInt(match[2], 10);
                 let y = parseInt(match[3], 10);
                 
-                // จัดการปี (Year) ให้อยู่ในรูปแบบ ค.ศ. (4 หลัก) เสมอ
-                if (y < 100) {
-                    if (y > 40) y += 2500; // เช่น 69 ให้กลายเป็น 2569
-                    else y += 2000; // เช่น 26 ให้กลายเป็น 2026
-                }
-                if (y > 2500) y -= 543; // แปลง พ.ศ. เป็น ค.ศ.
-                
-                // สลับเดือนกับวันถ้าผู้ใช้กรอกเดือนเกิน 12 
-                if (m > 12 && d <= 12) {
-                    let temp = d; d = m; m = temp;
-                }
-                
+                if (y < 100) { y += (y > 40 ? 2500 : 2000); }
+                if (y > 2500) y -= 543;
+                if (m > 12 && d <= 12) [d, m] = [m, d];
                 return new Date(y, m - 1, d);
             }
 
-            // 3. อ่านรูปแบบ YYYY-MM-DD
             match = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
             if (match) {
                 let y = parseInt(match[1], 10);
@@ -135,7 +130,6 @@
                 return new Date(y, m - 1, d);
             }
             
-            // 4. อ่านจากรูปแบบปกติสำรอง 
             const dObj = new Date(str);
             if (!isNaN(dObj.getTime())) return dObj;
 
@@ -216,9 +210,9 @@
 
             const toggleAll = () => {
                 if (hiddenColumns.length > 0) {
-                    setHiddenColumns([]); // โชว์ทั้งหมด
+                    setHiddenColumns([]); 
                 } else {
-                    setHiddenColumns(columns); // ซ่อนทั้งหมด
+                    setHiddenColumns(columns); 
                 }
             };
 
@@ -304,12 +298,12 @@
           const [isLoading, setIsLoading] = useState(true);
           const [firebaseError, setFirebaseError] = useState(null); 
           
-          // เช็คขนาดหน้าจอเพื่อปรับการแสดงผล Sidebar
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
           
           const [columns, setColumns] = useState([]);
           const [hiddenColumns, setHiddenColumns] = useState([]); 
-          const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '' });
+          
+          const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
@@ -330,24 +324,12 @@
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
           const [colWidths, setColWidths] = useState({}); 
 
-          // --- Gemini AI State ---
-          const [chatHistory, setChatHistory] = useState([
-              { role: 'model', text: 'สวัสดีครับ! ผมคือผู้ช่วย AI ประจำแอปนี้ คุณสามารถถามข้อมูลสรุปจากตารางงาน เช่น "ทีมไหนมีงานค้างเยอะสุด" หรือ "ช่วยสรุปงานของวันนี้ให้หน่อย" ได้เลยครับ' }
-          ]);
-          const [chatInput, setChatInput] = useState('');
-          const [isChatLoading, setIsChatLoading] = useState(false);
-          const chatEndRef = useRef(null);
+          const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+          const [editingCell, setEditingCell] = useState(null);
 
-          // Auto-scroll chat
-          useEffect(() => {
-              if (chatEndRef.current) {
-                  chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-              }
-          }, [chatHistory, isChatLoading]);
-
-          // ฟังก์ชันสำหรับลากปรับขนาดคอลัมน์
           const handleMouseDown = (e, col) => {
               e.preventDefault();
+              e.stopPropagation(); 
               const startX = e.pageX;
               const thElement = e.currentTarget.parentElement;
               const startWidth = thElement.getBoundingClientRect().width;
@@ -374,9 +356,6 @@
               });
           };
 
-          // ==========================================
-          // ดึงข้อมูลจาก Firestore แบบ Real-time
-          // ==========================================
           useEffect(() => {
               setIsLoading(true);
               setFirebaseError(null);
@@ -385,14 +364,14 @@
 
               const unsubscribe = collectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) {
-                      setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks' (อาจจะยังไม่ได้ดึงข้อมูลจาก Sheet หรือชื่อ Collection ผิด)");
+                      setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks'");
                       setIsLoading(false);
                       return;
                   }
 
-                  const newTasks = [];
                   let allCols = new Set(columns);
                   let metadataCols = null;
+                  const uniqueTasksMap = new Map();
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') {
@@ -406,13 +385,57 @@
                       Object.keys(data).forEach(key => {
                           if (key !== '_rowIndex') {
                               let rawValue = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
-                              // ใช้ฟังก์ชันแปลงวันที่ยาวๆ ให้เป็นรูปแบบสั้นอ่านง่าย
                               cleanData[key] = formatSheetDate(rawValue);
                               allCols.add(key);
                           }
                       });
                       cleanData._rowIndex = data['_rowIndex']?.integerValue ?? data['_rowIndex'] ?? 0;
-                      newTasks.push(cleanData);
+                      
+                      const mapKey = cleanData._rowIndex > 0 ? `row_${cleanData._rowIndex}` : doc.id;
+                      uniqueTasksMap.set(mapKey, cleanData);
+                  });
+
+                  // ✅ ระบบกรองข้อมูลซ้ำซ้อนและลบ Ghost Rows แบบขั้นสูง (Aggressive Deduplication)
+                  const contentHashes = new Set();
+                  const uniqueTaskKeys = new Set();
+
+                  const newTasks = Array.from(uniqueTasksMap.values()).filter(task => {
+                      // ด่านที่ 1: กรองแถวว่าง (เช็คว่ามีข้อมูลสำคัญไหมนอกจากเศษวันเวลา)
+                      // ป้องกันปัญหากรณีลบแถวใน Sheet แล้ว GAS ส่งมาเป็นค่าว่าง
+                      const hasVitalData = Object.keys(task).some(k => 
+                          k !== 'id' && k !== '_rowIndex' && 
+                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') &&
+                          String(task[k]).trim() !== ''
+                      );
+                      if (!hasVitalData) return false;
+
+                      // ด่านที่ 2: เช็คเนื้อหาซ้ำกันเป๊ะๆ (ป้องกันปัญหาจาก Google Script เวลาลบ/แทรกแถว)
+                      const normalizedData = {};
+                      Object.keys(task).sort().forEach(k => {
+                          if (k !== 'id' && k !== '_rowIndex') {
+                              normalizedData[k] = String(task[k] || '').trim();
+                          }
+                      });
+                      const hash = JSON.stringify(normalizedData);
+                      if (contentHashes.has(hash)) return false; // ข้อมูลซ้ำ ไม่เอา
+                      contentHashes.add(hash);
+                      
+                      // ด่านที่ 3: กรองข้อมูลที่ลงซ้ำเอง (เช็คด้วย CID + ชื่อบริษัท)
+                      // ถ้า GAS เออเร่อส่งข้อมูล CID เดียวกันมา 2 รอบ จะแสดงแค่อันเดียว
+                      const taskKeys = Object.keys(task);
+                      let tempCidCol = taskKeys.find(c => c.toLowerCase().includes('cid')) || '';
+                      let tempCompCol = taskKeys.find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ'].some(kw => c.toLowerCase().includes(kw))) || '';
+                      
+                      const cidVal = tempCidCol ? String(task[tempCidCol] || '').trim() : '';
+                      const compVal = tempCompCol ? String(task[tempCompCol] || '').trim() : '';
+                      
+                      if (cidVal !== '' && compVal !== '') {
+                          const uniqueKey = `${cidVal}_${compVal}`;
+                          if (uniqueTaskKeys.has(uniqueKey)) return false; // ซ่อนข้อมูลที่ซ้ำ
+                          uniqueTaskKeys.add(uniqueKey);
+                      }
+
+                      return true;
                   });
 
                   newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
@@ -440,115 +463,63 @@
               });
 
               return () => unsubscribe();
-              // eslint-disable-next-line react-hooks/exhaustive-deps
           }, []);
 
-          // ประมวลผล KeyMap อัตโนมัติเมื่อ Columns เปลี่ยนแปลง (ปรับการหาชื่อคอลัมน์ให้แม่นขึ้น)
           useEffect(() => {
               if (columns.length > 0) {
                   const findCol = (keywords) => columns.find(c => keywords.some(kw => c.toLowerCase().includes(kw.toLowerCase()))) || '';
                   
-                  // ดึงคอลัมน์หลักเพื่อใช้ Fallback
                   const colB = columns.length > 1 ? columns[1] : '';
                   const colC = columns.length > 2 ? columns[2] : '';
                   const colG = columns.length > 6 ? columns[6] : '';
                   const statusCol = findCol(['สถานะ', 'status']) || columns[columns.length - 1] || '';
 
-                  // แก้ปัญหากราฟนับทีมผิด โดยเจาะจงหาคอลัมน์จากคีย์เวิร์ดก่อน
+                  const contactColName = findCol(['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ']);
+                  const phoneColName = columns.find(c => c !== contactColName && (c.includes('เบอร์') || c.toLowerCase().includes('tel') || c.toLowerCase().includes('phone') || c.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
+
+                  const timeColName = columns.find(c => {
+                      const lc = c.toLowerCase();
+                      return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time') || lc.includes('นัด'));
+                  }) || colG;
+
+                  const dateColName = columns.find(c => {
+                      const lc = c.toLowerCase();
+                      return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('วันที่เข้าเก็บ') || lc.includes('วันที่') || lc.includes('date'));
+                  }) || columns[0];
+
                   setKeyMap({
                       colB, colC,
-                      date: findCol(['วันที่', 'date', 'เวลา']) || columns[0],
+                      date: dateColName,
                       status: statusCol,
                       team: findCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || colB,
-                      company: findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ']) || colC,
-                      time: findCol(['เวลา', 'time', 'นัด']) || colG
+                      company: findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company']) || colC,
+                      time: timeColName,
+                      contactName: contactColName,
+                      phone: phoneColName
                   });
               }
           }, [columns]);
 
-          // ฟังก์ชันสำหรับเคลียร์ตัวกรองหน้าตารางทั้งหมด
           const resetFilters = () => {
+              setFilterMonth('All');
+              setFilterTeams([]);
+              setSearchTerm('');
               setTableFilterTeams([]);
-              setTableFilterCID('All');
               setTableFilterDate('All');
               setTableFilterYear('All');
               setTableFilterStatus('All');
               setTableFilterOverdue('All');
-              setSearchTerm('');
+              setSortConfig({ key: null, direction: null });
           };
 
-          // ==========================================
-          // ถามคำถาม AI (Gemini API)
-          // ==========================================
-          const handleAskGemini = async (overridePrompt = null) => {
-              const query = overridePrompt || chatInput;
-              if (!query.trim()) return;
-
-              setChatInput('');
-              setChatHistory(prev => [...prev, { role: 'user', text: query }]);
-              setIsChatLoading(true);
-
-              const apiKey = ""; // <--- Execution environment provides the key automatically
-
-              const dataContext = tasks.map(t => {
-                  const essential = {};
-                  if (keyMap.company && t[keyMap.company]) essential.company = t[keyMap.company];
-                  if (keyMap.team && t[keyMap.team]) essential.team = t[keyMap.team];
-                  if (keyMap.status && t[keyMap.status]) essential.status = t[keyMap.status];
-                  if (keyMap.date && t[keyMap.date]) essential.date = t[keyMap.date];
-                  if (keyMap.time && t[keyMap.time]) essential.time = t[keyMap.time];
-                  return essential;
-              });
-
-              const limitedContext = dataContext.slice(0, 150);
-
-              const systemPrompt = `คุณคือผู้ช่วย AI อัจฉริยะสำหรับแอปพลิเคชัน "EquipTracker" หน้าที่ของคุณคือการวิเคราะห์และตอบคำถามที่เกี่ยวข้องกับข้อมูลตารางงาน (Equipment Collection) โดยอิงจากข้อมูลรูปแบบ JSON ที่แนบมานี้เท่านั้น: ${JSON.stringify(limitedContext)}. กรุณาตอบเป็นภาษาไทย ให้สั้น กระชับ เข้าใจง่าย และใช้รูปแบบการจัดหน้า (Bullet points, Bold) ให้น่าอ่าน หากคำถามไม่อยู่ในข้อมูล ให้ตอบอย่างสุภาพว่าไม่ทราบข้อมูลส่วนนั้น`;
-
-              const payload = {
-                  contents: [{ parts: [{ text: query }] }],
-                  systemInstruction: { parts: [{ text: systemPrompt }] }
-              };
-
-              const fetchWithRetry = async (url, options, retries = 5) => {
-                  let delay = 1000;
-                  for (let i = 0; i < retries; i++) {
-                      try {
-                          const response = await fetch(url, options);
-                          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                          return await response.json();
-                      } catch (error) {
-                          if (i === retries - 1) throw error;
-                          await new Promise(res => setTimeout(res, delay));
-                          delay *= 2;
-                      }
-                  }
-              };
-
-              try {
-                  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                  const data = await fetchWithRetry(url, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(payload)
-                  });
-
-                  const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "ขออภัย ไม่สามารถประมวลผลคำตอบได้";
-                  setChatHistory(prev => [...prev, { role: 'model', text: reply }]);
-              } catch (error) {
-                  setChatHistory(prev => [...prev, { role: 'model', text: "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI หรือข้อมูลอาจมีขนาดใหญ่เกินไป กรุณาลองใหม่อีกครั้ง" }]);
-              } finally {
-                  setIsChatLoading(false);
+          const handleSort = (key) => {
+              let direction = 'asc';
+              if (sortConfig.key === key && sortConfig.direction === 'asc') {
+                  direction = 'desc';
               }
+              setSortConfig({ key, direction });
           };
 
-          const handleKeyPress = (e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleAskGemini();
-              }
-          };
-
-          // อัปเดตฟังก์ชันตรวจสอบวันที่สำหรับ Calendar โดยใช้ parseDateHelper
           const isSameDate = (dateStr, dateObj) => {
               const d = parseDateHelper(dateStr);
               if (!d || !dateObj) return false;
@@ -582,23 +553,18 @@
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
-          // ==========================================
-          // แก้ไขเซลล์ แล้วเซฟลง Firebase
-          // ==========================================
           const handleCellChange = async (id, field, value) => {
               const previousTasks = [...tasks];
               setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               
               try {
-                  // 1. อัปเดตลง Firebase Firestore
                   await collectionRef.doc(id).set({ [field]: value }, { merge: true });
                   
-                  // 2. ยิงคำสั่งไปหา Google Sheet เพื่ออัปเดตข้อมูลแบบ Two-way sync
                   if (GAS_WEB_APP_URL) {
-                      const rowNum = id.replace('task_', ''); // เอาเลขแถวออกมา
+                      const rowNum = id.replace('task_', ''); 
                       fetch(GAS_WEB_APP_URL, {
                           method: 'POST',
-                          mode: 'no-cors', // ซ่อน Error CORS
+                          mode: 'no-cors', 
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ row: rowNum, field: field, value: value })
                       }).catch(e => console.error("Sync to Sheet failed:", e));
@@ -611,24 +577,46 @@
               }
           };
 
+          const handleCellDoubleClick = (e, cellId) => {
+              setEditingCell(cellId);
+              const el = e.target;
+              setTimeout(() => {
+                  el.focus();
+                  if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
+                      const range = document.createRange();
+                      range.selectNodeContents(el);
+                      range.collapse(false);
+                      const sel = window.getSelection();
+                      sel.removeAllRanges();
+                      sel.addRange(range);
+                  }
+              }, 10);
+          };
+
           const handleMouseMove = (e, task) => {
               const tooltipWidth = 320;
-              const tooltipHeight = 350; 
+              const tooltipHeight = Math.min(350, window.innerHeight - 40); 
+              
               let x = e.clientX + 15;
               let y = e.clientY + 15;
               
-              if (x + tooltipWidth > window.innerWidth) x = Math.max(10, window.innerWidth - tooltipWidth - 15);
-              if (y + tooltipHeight > window.innerHeight) y = Math.max(10, window.innerHeight - tooltipHeight - 10);
+              if (x + tooltipWidth > window.innerWidth) {
+                  x = e.clientX - tooltipWidth - 15;
+              }
+              if (y + tooltipHeight > window.innerHeight) {
+                  y = e.clientY - tooltipHeight - 15;
+              }
+              
+              x = Math.max(10, x);
+              y = Math.max(10, y);
               
               setTooltipData({ visible: true, task, x, y });
           };
           const handleMouseLeave = () => setTooltipData({ visible: false, task: null, x: 0, y: 0 });
 
-          // Helper
           const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
           const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
 
-          // --- การจัดการข้อมูล Dashboard ---
           const { date: dateCol, status: statusCol, team: teamCol, company: compCol, time: timeCol } = keyMap;
 
           const cidCol = columns.find(c => c.toLowerCase().includes('cid')) || '';
@@ -640,17 +628,14 @@
               return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
           }) || '';
 
-          // ฟังก์ชันสำหรับค้นหาคอลัมน์วันที่เข้าเก็บอย่างแม่นยำ
           const getCollectionDateCol = () => {
               return columns.find(c => c.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
           };
 
-          // --- ฟังก์ชันหลักสำหรับหาวันที่ที่ถูกต้องของงาน (สำหรับกราฟ) ---
           const getTaskEffectiveDateStr = (t) => {
               const targetCol = getCollectionDateCol();
               let dateStr = targetCol ? t[targetCol] : null;
               
-              // หากยังไม่มีข้อมูลวันที่เข้าเก็บ ให้ยึดตาม "วันที่ปัจจุบัน (วันนี้)"
               if (!dateStr || String(dateStr).trim() === '') {
                   const today = new Date();
                   dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
@@ -663,7 +648,6 @@
           const baseFilteredTasks = tasks.filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
               
-              // ใช้วันที่แบบเดียวกับที่ใช้คำนวณกราฟ
               const dStr = getTaskEffectiveDateStr(t);
               let m = null;
               
@@ -694,10 +678,16 @@
               return matchMonth && matchTeam && matchYearView;
           });
 
-          // ดึงรายชื่อเดือนแบบไม่ซ้ำจากข้อมูลตารางทั้งหมดเสมอ (เพื่อให้เปลี่ยนเดือนไปมาได้อิสระ)
           const uniqueMonths = [...new Set(tasks.map(t => {
               const parsedD = parseDateHelper(getTaskEffectiveDateStr(t));
               return parsedD ? parsedD.getMonth() + 1 : null;
+          }).filter(Boolean))].sort((a,b)=>a-b);
+          
+          const uniqueColMonths = [...new Set(tasks.map(t => {
+              const targetCol = getCollectionDateCol();
+              const dStr = targetCol ? t[targetCol] : t[keyMap.date];
+              const d = parseDateHelper(dStr);
+              return d ? d.getMonth() + 1 : null;
           }).filter(Boolean))].sort((a,b)=>a-b);
 
           const uniqueCIDs = cidCol ? [...new Set(tasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
@@ -800,7 +790,6 @@
               }
           };
 
-          // กราฟรายเดือน: กรองเฉพาะข้อมูลที่มีวันที่สมบูรณ์ และไม่มีการปัดไปเดือนปัจจุบัน
           const monthlyData = {};
           for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0 };
           
@@ -811,10 +800,8 @@
                   let m = parsedD.getMonth() + 1;
                   if (m >= 1 && m <= 12) {
                       const s = getCleanStatus(t[statusCol]).toLowerCase();
-                      
                       const isCollected = s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%');
                       
-                      // ถ้ารวมสถานะอื่นทั้งหมดเป็น Ongoing
                       if (isCollected) {
                           monthlyData[m].collected++;
                       } else {
@@ -928,14 +915,23 @@
               scales: { x: { stacked: false }, y: { stacked: false, beginAtZero: true, ticks: { precision: 0 } } }
           };
 
-          // --- Table Filtering Logic ---
-          let tableTasks = tasks;
+          // --- Table Filtering & Sorting Logic ---
+          let tableTasks = [...tasks]; 
+          
           if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
           if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
-          if (tableFilterDate !== 'All' && dateCol) tableTasks = tableTasks.filter(t => (t[dateCol] ? String(t[dateCol]).trim() : '') === tableFilterDate);
           if (tableFilterYear !== 'All' && equipYearCol) tableTasks = tableTasks.filter(t => (t[equipYearCol] ? String(t[equipYearCol]).trim() : '') === tableFilterYear);
           if (tableFilterStatus !== 'All' && statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[statusCol]) === tableFilterStatus);
           
+          if (tableFilterDate !== 'All') { 
+              tableTasks = tableTasks.filter(t => {
+                  const targetCol = getCollectionDateCol();
+                  const dStr = targetCol ? t[targetCol] : t[keyMap.date];
+                  const d = parseDateHelper(dStr);
+                  return d && (d.getMonth() + 1).toString() === tableFilterDate;
+              });
+          }
+
           if (tableFilterOverdue !== 'All' && overDueCol) {
               tableTasks = tableTasks.filter(t => {
                   const val = t[overDueCol] || '';
@@ -957,6 +953,17 @@
                   return false;
               });
           }
+
+          if (sortConfig.key && sortConfig.direction) {
+              tableTasks.sort((a, b) => {
+                  const valA = String(a[sortConfig.key] || '');
+                  const valB = String(b[sortConfig.key] || '');
+                  
+                  return sortConfig.direction === 'asc' 
+                      ? valA.localeCompare(valB, 'th', { numeric: true }) 
+                      : valB.localeCompare(valA, 'th', { numeric: true });
+              });
+          }
           
           if (searchTerm) {
               const lowerSearch = searchTerm.toLowerCase();
@@ -976,13 +983,11 @@
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
               
-              // สำหรับปฏิทิน ยึดคอลัมน์ "วันที่เข้าเก็บ" เท่านั้น ไม่มีตัวตายตัวแทน
               const targetCol = getCollectionDateCol();
 
               let filteredTasks = tasks.filter(t => {
                   let dateStr = targetCol ? t[targetCol] : null;
                   
-                  // ถ้าช่องวันที่เข้าเก็บว่างเปล่า ให้ข้ามไปเลย (ไม่แสดงในปฏิทิน)
                   if (!dateStr || String(dateStr).trim() === '') {
                       return false;
                   }
@@ -1031,24 +1036,40 @@
             </button>
           );
 
+          // ⚠️ ซ่อนคอลัมน์ที่ไม่จำเป็นใน Tooltip ให้หมดเกลี้ยง (เพิ่มการเช็คคีย์เวิร์ดให้กว้างขึ้น)
+          const unwantedTooltipCols = columns.filter(c => {
+              const lc = c.toLowerCase().replace(/\s+/g, '');
+              return lc.includes('แจ้งsub') || 
+                     lc.includes('วันที่แจ้ง') ||
+                     lc.includes('วันที่ลงข้อมูล') ||
+                     lc.includes('วันที่รับงาน') ||
+                     lc.includes('ประทับเวลา') ||
+                     lc.includes('timestamp') ||
+                     lc.includes('เวลาแจ้ง') ||
+                     lc.includes('อีเมล') ||
+                     lc.includes('email') ||
+                     lc.includes('mail') ||
+                     lc.includes('year') ||
+                     lc.includes('ปี') ||
+                     lc.includes('นัดหมายลูกค้า') ||
+                     lc.includes('over3') ||
+                     lc.includes('เกินกำหนด') ||
+                     lc.includes('วันที่โทร') ||
+                     lc.includes('โทรติดต่อ');
+          });
+
           const skipColsInTooltip = [
-              compCol, teamCol, dateCol, timeCol,
-              columns.find(c => c.toLowerCase().includes('แจ้ง subcontract') || c.includes('แจ้ง Sub')),
-              columns.find(c => c.toLowerCase().includes('อีเมล') || c.toLowerCase().includes('email') || c.toLowerCase().includes('mail')),
-              columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')),
-              columns.find(c => {
-                  const lowerC = c.toLowerCase().replace(/\s+/g, '');
-                  return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
-              }),
-              columns.find(c => c.includes('วันที่โทร') || c.includes('โทรติดต่อ'))
+              compCol, teamCol, timeCol, dateCol,
+              getCollectionDateCol(), // ซ่อนคอลัมน์เวลาเข้าเก็บจากเนื้อหา เพราะจะโชว์เด่นๆที่ Header แล้ว
+              ...unwantedTooltipCols
           ].filter(Boolean);
 
           const visibleColumns = columns.filter(col => !hiddenColumns.includes(col));
 
           return (
-            <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
+            <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden relative w-full">
               
-              {/* Floating Menu Button for Mobile (ปุ่มลอยสำหรับมือถือ ไม่ต้องเลื่อนจอขึ้น) */}
+              {/* Floating Menu Button for Mobile */}
               <button 
                   onClick={() => setIsSidebarOpen(true)}
                   className="md:hidden fixed bottom-6 right-6 z-40 bg-blue-600 text-white w-14 h-14 rounded-full shadow-[0_4px_15px_rgba(37,99,235,0.4)] flex items-center justify-center active:scale-95 transition-transform"
@@ -1088,178 +1109,171 @@
 
                   <SidebarItem id="tasks" iconClass="fa-solid fa-table-list" label="ตารางงาน (All Data)" />
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
-                  
-                  {/* เพิ่มเมนู ผู้ช่วย AI (Gemini) */}
-                  <div className="pt-4 mt-4 border-t border-slate-100">
-                    <SidebarItem id="ai" iconClass="fa-solid fa-sparkles !text-amber-500" label="ผู้ช่วย AI (Gemini)" />
-                  </div>
 
                 </nav>
-                <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium">
+                <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium shrink-0">
+                  <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
                   {isLoading ? (
-                      <span className="text-blue-500"><i className="fa-solid fa-circle-notch fa-spin"></i> กำลังซิงค์ข้อมูล...</span>
+                      <span className="text-slate-500">Syncing...</span>
                   ) : firebaseError ? (
-                      <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> พบปัญหาการเชื่อมต่อ</span>
+                      <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span>
                   ) : (
-                      <span className="text-emerald-600"><i className="fa-solid fa-cloud-check"></i> ซิงค์เรียลไทม์แล้ว</span>
+                      <span className="text-emerald-600">Live Synced</span>
                   )}
                 </div>
               </aside>
 
-              <main className="flex-1 overflow-y-auto p-4 md:p-8 relative w-full">
+              <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
                 
-                <div className="hidden md:flex absolute top-4 right-8 z-10 items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-4 py-2 rounded-full border border-emerald-200 shadow-sm animate-in fade-in">
-                    <i className="fa-solid fa-cloud-bolt"></i>
-                    ระบบคลาวด์อัตโนมัติ
-                </div>
-
                 {/* --- 1. หน้า Dashboard --- */}
                 {activeTab === 'dashboard' && (
-                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 pt-8 md:pt-0">
-                    <header className="mb-4 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                      <div>
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden md:block">
-                                <i className="fa-solid fa-bars"></i>
-                            </button>
-                            <div>
-                                <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ</h2>
-                                <p className="text-xs md:text-sm text-slate-500 mt-1">
-                                    มุมมอง: <span className="font-semibold text-blue-600">{dashboardView === 'overview' ? 'ภาพรวมทั้งหมด' : dashboardView === '2026' ? 'ปี 2026 (ปัจจุบัน)' : 'ปี 2018 - 2025'}</span>
-                                </p>
+                  <div className="flex-1 flex flex-col p-4 md:p-8 animate-in fade-in duration-500 overflow-y-auto">
+                    <div className="max-w-7xl mx-auto w-full space-y-6">
+                      <header className="mb-4 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                        <div>
+                            <div className="flex items-center gap-3">
+                              <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden md:block">
+                                  <i className="fa-solid fa-bars"></i>
+                              </button>
+                              <div>
+                                  <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ</h2>
+                                  <p className="text-xs md:text-sm text-slate-500 mt-1">
+                                      มุมมอง: <span className="font-semibold text-blue-600">{dashboardView === 'overview' ? 'ภาพรวมทั้งหมด' : dashboardView === '2026' ? 'ปี 2026 (ปัจจุบัน)' : 'ปี 2018 - 2025'}</span>
+                                  </p>
+                              </div>
                             </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-200 items-center mt-2 md:mt-0">
+                          <div className="flex items-center gap-2 w-full md:w-auto">
+                              <label className="text-xs md:text-sm font-semibold text-slate-600">เดือน:</label>
+                              <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="flex-1 md:flex-none border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none">
+                                  <option value="All">ทั้งหมด</option>
+                                  {uniqueMonths.map(m => <option key={m} value={m}>{monthNames[m-1]}</option>)}
+                              </select>
                           </div>
+                          <div className="flex items-center gap-2 w-full md:w-auto">
+                              <label className="text-xs md:text-sm font-semibold text-slate-600">ทีมงาน:</label>
+                              <div className="flex-1 md:flex-none">
+                                  <MultiSelect options={uniqueTeams} selected={filterTeams} onChange={setFilterTeams} placeholder="ทีมงาน" />
+                              </div>
+                          </div>
+                        </div>
+                      </header>
+                      
+                      {firebaseError && (
+                          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
+                              <div className="flex items-center">
+                                  <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
+                                  <div>
+                                      <p className="text-red-700 font-bold">เกิดข้อผิดพลาดในการดึงข้อมูล</p>
+                                      <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+
+                      <div className="flex flex-nowrap overflow-x-auto gap-3 md:gap-4 pb-4 pt-3 px-2 custom-scrollbar w-full">
+                          <div className="bg-slate-800 text-white p-3 md:p-4 rounded-xl shadow-md border border-slate-700 flex-shrink-0 min-w-[120px] md:min-w-[160px] flex flex-col items-center justify-center gap-1 md:gap-2">
+                              <p className="text-xs md:text-sm font-semibold text-slate-300 text-center w-full">จำนวนงานทั้งหมด</p>
+                              <p className="text-3xl md:text-5xl font-bold text-center w-full">{totalTasksCount}</p>
+                          </div>
+                          {sortedStatuses.map((status, idx) => {
+                              const isSelected = selectedStatuses.length === 0 || selectedStatuses.includes(status);
+                              const bg = getStatusColor(status, isSelected ? 0.15 : 0.05);
+                              const border = getStatusColor(status, isSelected ? 1 : 0.2);
+                              const text = getStatusColor(status, isSelected ? 1 : 0.4);
+
+                              return (
+                                  <div 
+                                      key={idx} 
+                                      onClick={() => toggleStatusFilter(status)}
+                                      className={`p-3 md:p-4 rounded-xl shadow-md border-b-4 cursor-pointer transition-all duration-200 select-none flex-shrink-0 min-w-[120px] md:min-w-[160px] flex flex-col justify-between ${isSelected ? 'scale-100 ring-2 ring-offset-2' : 'scale-95 opacity-70 hover:opacity-100'}`}
+                                      style={{ backgroundColor: bg, borderColor: border, '--tw-ring-color': border }}
+                                  >
+                                      <div className="flex justify-between items-start">
+                                          <p className="text-xs md:text-sm font-bold truncate pr-2 whitespace-normal leading-tight" title={status} style={{ color: text }}>{status}</p>
+                                          {isSelected && selectedStatuses.length > 0 && <i className="fa-solid fa-circle-check text-xs md:text-sm mt-1" style={{ color: text }}></i>}
+                                      </div>
+                                      <p className="text-2xl md:text-4xl font-bold mt-2 md:mt-4" style={{ color: text }}>{statusCounts[status]}</p>
+                                  </div>
+                              );
+                          })}
                       </div>
 
-                      <div className="flex flex-wrap gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-200 items-center mt-2 md:mt-0">
-                        <div className="flex items-center gap-2 w-full md:w-auto">
-                            <label className="text-xs md:text-sm font-semibold text-slate-600">เดือน:</label>
-                            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="flex-1 md:flex-none border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none">
-                                <option value="All">ทั้งหมด</option>
-                                {uniqueMonths.map(m => <option key={m} value={m}>{monthNames[m-1]}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-2 w-full md:w-auto">
-                            <label className="text-xs md:text-sm font-semibold text-slate-600">ทีมงาน:</label>
-                            <div className="flex-1 md:flex-none">
-                                <MultiSelect options={uniqueTeams} selected={filterTeams} onChange={setFilterTeams} placeholder="ทีมงาน" />
-                            </div>
-                        </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-6">
+                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col relative">
+                              <div className="flex justify-between items-center mb-4">
+                                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-pie text-blue-600"></i> สัดส่วนสถานะงาน</h3>
+                                  {selectedStatuses.length > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Filtered</span>}
+                              </div>
+                              <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[250px] md:min-h-[300px]">
+                                  {chartFilteredTasks.length > 0 ? (
+                                      <>
+                                          <div className="relative mx-auto flex items-center justify-center w-48 h-48 md:w-60 md:h-60">
+                                              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                                                  <span className="text-3xl md:text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks.length}</span>
+                                                  <span className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span>
+                                              </div>
+                                              <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
+                                          </div>
+                                          <div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
+                                              {chartSortedStatuses.map(s => (
+                                                  <div key={s} className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-600">
+                                                      <span className="w-2.5 md:w-3 h-2.5 md:h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>
+                                                      {s} <span className="text-slate-400">({chartStatusCounts[s]})</span>
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </>
+                                  ) : (
+                                      <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูลตามสถานะที่เลือก</p>
+                                  )}
+                              </div>
+                          </div>
+
+                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
+                              <h3 className="text-base md:text-lg font-bold mb-4 flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> สรุปการจัดเก็บรายเดือน {dashboardView !== 'overview' && <span className="text-xs md:text-base font-normal">({dashboardView === 'history' ? '2018-2025' : dashboardView})</span>}</h3>
+                              <div className="relative h-60 md:h-72 w-full">
+                                  <ChartComponent type="bar" data={monthlyChartData} options={monthlyChartOptions} />
+                              </div>
+                          </div>
+
+                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
+                              <div className="flex justify-between items-center mb-4">
+                                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3>
+                              </div>
+                              <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
+                                  <div className="min-w-[500px] md:min-w-[600px] h-full">
+                                      {chartFilteredTasks.length > 0 ? (
+                                          <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} />
+                                      ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
+                              <div className="flex justify-between items-center mb-4">
+                                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3>
+                              </div>
+                              <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
+                                  <div className="min-w-[300px] h-full">
+                                      {chartFilteredTasks.length > 0 ? (
+                                          <ChartComponent type="bar" data={overdueChartData} options={overdueChartOptions} />
+                                      ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                  </div>
+                              </div>
+                          </div>
+
                       </div>
-                    </header>
-                    
-                    {firebaseError && (
-                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
-                            <div className="flex items-center">
-                                <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
-                                <div>
-                                    <p className="text-red-700 font-bold">เกิดข้อผิดพลาดในการดึงข้อมูล</p>
-                                    <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="flex flex-nowrap overflow-x-auto gap-3 md:gap-4 pb-4 pt-3 px-2 custom-scrollbar w-full">
-                        <div className="bg-slate-800 text-white p-3 md:p-4 rounded-xl shadow-md border border-slate-700 flex-shrink-0 min-w-[120px] md:min-w-[160px] flex flex-col items-center justify-center gap-1 md:gap-2">
-                            <p className="text-xs md:text-sm font-semibold text-slate-300 text-center w-full">จำนวนงานทั้งหมด</p>
-                            <p className="text-3xl md:text-5xl font-bold text-center w-full">{totalTasksCount}</p>
-                        </div>
-                        {sortedStatuses.map((status, idx) => {
-                            const isSelected = selectedStatuses.length === 0 || selectedStatuses.includes(status);
-                            const bg = getStatusColor(status, isSelected ? 0.15 : 0.05);
-                            const border = getStatusColor(status, isSelected ? 1 : 0.2);
-                            const text = getStatusColor(status, isSelected ? 1 : 0.4);
-
-                            return (
-                                <div 
-                                    key={idx} 
-                                    onClick={() => toggleStatusFilter(status)}
-                                    className={`p-3 md:p-4 rounded-xl shadow-md border-b-4 cursor-pointer transition-all duration-200 select-none flex-shrink-0 min-w-[120px] md:min-w-[160px] flex flex-col justify-between ${isSelected ? 'scale-100 ring-2 ring-offset-2' : 'scale-95 opacity-70 hover:opacity-100'}`}
-                                    style={{ backgroundColor: bg, borderColor: border, '--tw-ring-color': border }}
-                                >
-                                    <div className="flex justify-between items-start">
-                                        <p className="text-xs md:text-sm font-bold truncate pr-2 whitespace-normal leading-tight" title={status} style={{ color: text }}>{status}</p>
-                                        {isSelected && selectedStatuses.length > 0 && <i className="fa-solid fa-circle-check text-xs md:text-sm mt-1" style={{ color: text }}></i>}
-                                    </div>
-                                    <p className="text-2xl md:text-4xl font-bold mt-2 md:mt-4" style={{ color: text }}>{statusCounts[status]}</p>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col relative">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-pie text-blue-600"></i> สัดส่วนสถานะงาน</h3>
-                                {selectedStatuses.length > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Filtered</span>}
-                            </div>
-                            <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[250px] md:min-h-[300px]">
-                                {chartFilteredTasks.length > 0 ? (
-                                    <>
-                                        <div className="relative mx-auto flex items-center justify-center w-48 h-48 md:w-60 md:h-60">
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                                                <span className="text-3xl md:text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks.length}</span>
-                                                <span className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span>
-                                            </div>
-                                            <ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} />
-                                        </div>
-                                        <div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">
-                                            {chartSortedStatuses.map(s => (
-                                                <div key={s} className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-600">
-                                                    <span className="w-2.5 md:w-3 h-2.5 md:h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>
-                                                    {s} <span className="text-slate-400">({chartStatusCounts[s]})</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูลตามสถานะที่เลือก</p>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                            <h3 className="text-base md:text-lg font-bold mb-4 flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> สรุปการจัดเก็บรายเดือน {dashboardView !== 'overview' && <span className="text-xs md:text-base font-normal">({dashboardView === 'history' ? '2018-2025' : dashboardView})</span>}</h3>
-                            <div className="relative h-60 md:h-72 w-full">
-                                <ChartComponent type="bar" data={monthlyChartData} options={monthlyChartOptions} />
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3>
-                            </div>
-                            <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
-                                <div className="min-w-[500px] md:min-w-[600px] h-full">
-                                    {chartFilteredTasks.length > 0 ? (
-                                        <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} />
-                                    ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3>
-                            </div>
-                            <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
-                                <div className="min-w-[300px] h-full">
-                                    {chartFilteredTasks.length > 0 ? (
-                                        <ChartComponent type="bar" data={overdueChartData} options={overdueChartOptions} />
-                                    ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
-                                </div>
-                            </div>
-                        </div>
-
                     </div>
                   </div>
                 )}
 
-                {/* --- 2. หน้าตารางงาน --- */}
+                {/* --- 2. หน้าตารางงาน (PC Screen Fill + Sorting) --- */}
                 {activeTab === 'tasks' && (
-                  <div className="max-w-full mx-auto space-y-4 animate-in fade-in duration-500 pt-8 md:pt-0">
-                    <header className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
+                  <div className="flex-1 flex flex-col h-full w-full max-w-full p-4 md:p-8 animate-in fade-in duration-500">
+                    <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden md:block">
                             <i className="fa-solid fa-bars"></i>
@@ -1271,7 +1285,7 @@
                     </header>
 
                     {firebaseError && (
-                        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
+                        <div className="shrink-0 bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
                             <div className="flex items-center">
                                 <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
                                 <div>
@@ -1282,7 +1296,7 @@
                         </div>
                     )}
 
-                    <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 md:space-y-4">
+                    <div className="shrink-0 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 md:space-y-4 mb-4">
                         <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
                             <div className="relative w-full">
                                 <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
@@ -1295,16 +1309,11 @@
                             {teamCol && (
                                 <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>
                             )}
-                            {cidCol && (
-                                <select value={tableFilterCID} onChange={e => setTableFilterCID(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                    <option value="All">CID (ทั้งหมด)</option>
-                                    {uniqueCIDs.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            )}
+                            
                             {dateCol && (
                                 <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                    <option value="All">วันที่เข้าเก็บ (ทั้งหมด)</option>
-                                    {uniqueDates.map(t => <option key={t} value={t}>{t}</option>)}
+                                    <option value="All">เดือนเข้าเก็บ (ทั้งหมด)</option>
+                                    {uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}
                                 </select>
                             )}
                             {equipYearCol && (
@@ -1320,7 +1329,6 @@
                                 </select>
                             )}
                             
-                            {/* เมนูตัวกรอง 'นัดหมายลูกค้า' */}
                             {overDueCol && (
                                 <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]">
                                     <option value="All">นัดหมายลูกค้า (ทั้งหมด)</option>
@@ -1333,15 +1341,16 @@
                             {/* กลุ่มปุ่มจัดการคอลัมน์ จัดชิดขวา */}
                             <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto">
                                 <ColumnToggle columns={columns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} />
-                                <button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-500 px-3 md:px-4 py-1.5 rounded-lg border border-red-200 hover:border-red-500 transition-colors h-[38px]">
+                                <button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-500 px-3 md:px-4 py-1.5 rounded-lg border border-red-200 hover:border-red-500 transition-colors h-[38px]" title="ล้างตัวกรอง และ ยกเลิกการเรียงลำดับ">
                                     <i className="fa-solid fa-rotate-left"></i> ล้างตัวกรอง
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                      <div className="overflow-x-auto table-container max-h-[60vh]">
+                    {/* ตารางงานที่เลื่อน Scrollbar ภายในได้เต็มจอ */}
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0">
+                      <div className="flex-1 overflow-x-auto overflow-y-auto table-container">
                         <table className="w-full text-left border-collapse text-sm" style={{ tableLayout: 'auto' }}>
                           <thead className="sticky top-0 z-10 bg-slate-800 shadow-sm">
                             <tr>
@@ -1350,15 +1359,24 @@
                                   return (
                                       <th 
                                           key={idx} 
-                                          className="border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none"
+                                          className="border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none sortable-header"
                                           style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
+                                          onClick={() => handleSort(col)}
+                                          title="คลิกเพื่อเรียงลำดับ"
                                       >
-                                          <div className="th-content text-xs md:text-sm font-semibold text-white px-2 md:px-4 py-2 md:py-3">
-                                              {col}
+                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
+                                              <div className="th-content text-xs md:text-sm font-semibold text-white">
+                                                  {col}
+                                              </div>
+                                              <div className="ml-2 text-white opacity-70 flex-shrink-0">
+                                                  {sortConfig.key === col ? (
+                                                      sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>
+                                                  ) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}
+                                              </div>
                                           </div>
                                           <div 
-                                              onMouseDown={(e) => handleMouseDown(e, col)}
-                                              onDoubleClick={() => handleDoubleClickResize(col)}
+                                              onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, col); }}
+                                              onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickResize(col); }}
                                               title="ลากปรับขนาด / ดับเบิ้ลคลิกพอดีข้อความ"
                                               className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
                                           >
@@ -1390,7 +1408,9 @@
                                     
                                     const val = task[col] || '';
                                     const cleanVal = getCleanStatus(val);
-                                    let cellStyle = "editable-cell text-xs md:text-sm";
+                                    const cellId = `${task.id}-${col}`;
+                                    const isEditing = editingCell === cellId;
+                                    let cellStyle = `editable-cell text-xs md:text-sm ${isEditing ? 'editing text-slate-800' : ''}`;
                                     let styleObj = {};
                                     
                                     if (isStatusCell) {
@@ -1423,12 +1443,16 @@
                                             {isStatusCell ? (
                                                 <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
                                                     <div 
-                                                        contentEditable="true"
+                                                        contentEditable={isEditing}
                                                         suppressContentEditableWarning={true}
-                                                        className="flex-1 px-2 md:px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center"
+                                                        className={`flex-1 px-2 md:px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`}
                                                         style={{ minHeight: '28px', lineHeight: '20px' }}
-                                                        onBlur={e => handleCellChange(task.id, col, e.target.innerText)}
-                                                        title={val}
+                                                        onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
+                                                        onBlur={e => {
+                                                            handleCellChange(task.id, col, e.target.innerText);
+                                                            setEditingCell(null);
+                                                        }}
+                                                        title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
                                                     >
                                                         {val}
                                                     </div>
@@ -1448,12 +1472,16 @@
                                                 </div>
                                             ) : (
                                                 <div 
-                                                    contentEditable="true"
+                                                    contentEditable={isEditing}
                                                     suppressContentEditableWarning={true}
                                                     className={cellStyle} 
-                                                    style={{ ...styleObj, minHeight: '28px', cursor: 'text' }}
-                                                    onBlur={e => handleCellChange(task.id, col, e.target.innerText)} 
-                                                    title={val}
+                                                    style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer' }}
+                                                    onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
+                                                    onBlur={e => {
+                                                        handleCellChange(task.id, col, e.target.innerText);
+                                                        setEditingCell(null);
+                                                    }}
+                                                    title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
                                                 >
                                                     {val}
                                                 </div>
@@ -1467,21 +1495,21 @@
                         </table>
                       </div>
                       
-                      <div className="bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex items-center justify-between">
+                      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex items-center justify-between">
                           <div className="text-xs md:text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
                               <i className="fa-solid fa-list-check"></i>
                               แสดงผลทั้งหมด {tableTasks.length} รายการ
                           </div>
-                          <div className="text-[10px] md:text-xs text-slate-400">แก้ไขข้อมูลเพื่อซิงค์ไปที่ Firebase โดยตรง</div>
+                          <div className="text-[10px] md:text-xs text-slate-400">ดับเบิ้ลคลิกเพื่อแก้ไขข้อมูล (ซิงค์ไปที่ Firebase โดยตรง)</div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* --- 3. หน้าปฏิทิน --- */}
+                {/* --- 3. หน้าปฏิทิน (PC Fullscreen) --- */}
                 {activeTab === 'calendar' && (
-                  <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 pt-8 md:pt-0">
-                    <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4 md:mb-8">
+                  <div className="flex-1 flex flex-col h-full w-full p-4 md:p-8 animate-in fade-in duration-500 min-h-0">
+                    <header className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden md:block">
                             <i className="fa-solid fa-bars"></i>
@@ -1512,208 +1540,244 @@
                       </div>
                     </header>
 
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0">
                       {calendarView === 'month' && (
-                        <div className="grid grid-cols-7 border-l border-t border-slate-200">
-                          {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((d, i) => (
-                            <div key={d} className="bg-slate-50 py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600 border-r border-b border-slate-200">
-                                <span className="md:hidden">{d}</span>
-                                <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][i]}</span>
-                            </div>
-                          ))}
-                          {monthSlots.map((dateObj, idx) => {
-                            const dayTasks = getTasksForDateObj(dateObj);
-                            return (
-                              <div key={idx} className="bg-white min-h-[100px] md:min-h-[140px] p-1 md:p-2 flex flex-col border-r border-b border-slate-200 group hover:bg-slate-50/50 transition-colors">
-                                {dateObj && (
-                                  <>
-                                    <div className="text-right mb-0.5 md:mb-1">
-                                      <span 
-                                        onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
-                                        title="คลิกเพื่อดูรายละเอียดรายวัน"
-                                        className={`inline-block w-6 h-6 md:w-7 md:h-7 leading-6 md:leading-7 text-center rounded-full text-xs md:text-sm font-semibold cursor-pointer hover:scale-110 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 bg-slate-100 group-hover:bg-blue-100 group-hover:text-blue-700 transition-all'}`}
-                                      >
-                                        {dateObj.getDate()}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1 space-y-1 md:space-y-1.5 overflow-y-auto max-h-[80px] md:max-h-[120px] table-container pr-1">
-                                      {dayTasks.map(t => {
-                                          const bg = getStatusColor(t[statusCol] || '', 0.1);
-                                          const border = getStatusColor(t[statusCol] || '', 1);
-                                          return (
-                                            <div key={t.id} style={{backgroundColor: bg, borderColor: border}} className="p-1 md:p-1.5 rounded-lg border-l-2 md:border-l-4 shadow-sm text-[10px] md:text-xs space-y-0.5 cursor-pointer hover:shadow-md transition-shadow bg-white" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
-                                              {compCol && <div className="font-bold text-slate-800 truncate" title={t[compCol]}>{t[compCol]}</div>}
-                                              {keyMap.colB && <div className="text-[8px] md:text-[10px] text-slate-600 truncate">{t[keyMap.colB]}</div>}
-                                              <div className="text-[8px] md:text-[10px] font-semibold mt-1 truncate" style={{color: border}}>[{t[statusCol]}]</div>
-                                            </div>
-                                          );
-                                      })}
-                                    </div>
-                                  </>
-                                )}
+                        <div className="flex-1 flex flex-col min-h-0">
+                          <div className="grid grid-cols-7 border-l border-t border-slate-200 shrink-0">
+                            {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((d, i) => (
+                              <div key={d} className="bg-slate-50 py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600 border-r border-b border-slate-200">
+                                  <span className="md:hidden">{d}</span>
+                                  <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][i]}</span>
                               </div>
-                            );
-                          })}
+                            ))}
+                          </div>
+                          <div className="flex-1 overflow-hidden">
+                              <div className="grid grid-cols-7 border-l border-slate-200 h-full auto-rows-fr">
+                                {monthSlots.map((dateObj, idx) => {
+                                  const dayTasks = getTasksForDateObj(dateObj);
+                                  return (
+                                    <div key={idx} className="bg-white p-1 md:p-2 flex flex-col border-r border-b border-slate-200 group hover:bg-slate-50/50 transition-colors h-full overflow-hidden">
+                                      {dateObj && (
+                                        <>
+                                          <div className="text-right mb-0.5 md:mb-1 shrink-0">
+                                            <span 
+                                              onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
+                                              title="คลิกเพื่อดูรายละเอียดรายวัน"
+                                              className={`inline-block w-6 h-6 md:w-7 md:h-7 leading-6 md:leading-7 text-center rounded-full text-xs md:text-sm font-semibold cursor-pointer hover:scale-110 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 bg-slate-100 group-hover:bg-blue-100 group-hover:text-blue-700 transition-all'}`}
+                                            >
+                                              {dateObj.getDate()}
+                                            </span>
+                                          </div>
+                                          <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1 md:space-y-1.5 min-h-0">
+                                            {dayTasks.map(t => {
+                                                const border = getStatusColor(t[statusCol] || '', 1);
+                                                const softBg = getStatusColor(t[statusCol] || '', 0.1);
+                                                const colDate = getCollectionDateCol() ? t[getCollectionDateCol()] : (t[keyMap.date] || '-');
+                                                const colTime = t[keyMap.time] || '-';
+                                                
+                                                return (
+                                                  <div key={t.id} style={{borderLeftColor: border}} className="p-1.5 md:p-2 rounded-lg md:rounded-xl border border-l-2 md:border-l-4 shadow-sm bg-white text-[9px] md:text-xs space-y-1 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
+                                                    {/* ทีม */}
+                                                    <div className="text-slate-500 font-semibold truncate mb-0.5 text-[8px] md:text-[10px]">ทีม: {t[keyMap.team] || '-'}</div>
+                                                    
+                                                    {/* บริษัทลูกค้า */}
+                                                    <div className="font-bold text-slate-800 leading-tight line-clamp-2" title={t[keyMap.company]}>{t[keyMap.company] || 'ไม่ระบุชื่อ'}</div>
+                                                    
+                                                    {/* วันที่และเวลา */}
+                                                    <div className="flex items-center gap-1 text-slate-600 font-medium text-[8px] md:text-[10px] mt-0.5 flex-wrap">
+                                                        <i className="fa-regular fa-calendar-check"></i> {colDate} 
+                                                        {colTime !== '-' && <><i className="fa-regular fa-clock ml-0.5"></i> {colTime}</>}
+                                                    </div>
+                                                    
+                                                    {/* Status */}
+                                                    <div className="mt-1 text-center font-bold px-1 py-0.5 rounded border text-[8px] md:text-[10px] truncate" style={{backgroundColor: softBg, color: border, borderColor: border}}>
+                                                        {t[statusCol] || 'ไม่มีสถานะ'}
+                                                    </div>
+                                                  </div>
+                                                );
+                                            })}
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                          </div>
                         </div>
                       )}
 
                       {calendarView === 'week' && (
-                        <div className="grid grid-cols-7 border-l border-t border-slate-200">
-                          {weekSlots.map((dateObj, idx) => (
-                            <div key={idx} className="bg-slate-50 py-2 md:py-3 text-center border-r border-b border-slate-200">
-                              <div className="text-[10px] md:text-sm font-semibold text-slate-500">
-                                  <span className="md:hidden">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dateObj.getDay()]}</span>
-                                  <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][dateObj.getDay()]}</span>
+                        <div className="flex-1 flex flex-col min-h-0">
+                          <div className="grid grid-cols-7 border-l border-t border-slate-200 shrink-0">
+                            {weekSlots.map((dateObj, idx) => (
+                              <div key={idx} className="bg-slate-50 py-2 md:py-3 text-center border-r border-b border-slate-200">
+                                <div className="text-[10px] md:text-sm font-semibold text-slate-500">
+                                    <span className="md:hidden">{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dateObj.getDay()]}</span>
+                                    <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][dateObj.getDay()]}</span>
+                                </div>
+                                <div 
+                                  onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
+                                  title="คลิกเพื่อดูรายละเอียดรายวัน"
+                                  className={`text-base md:text-2xl font-bold mt-1 cursor-pointer transition-colors inline-block px-2 md:px-3 py-0.5 md:py-1 rounded-lg hover:bg-blue-100 hover:text-blue-700 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'text-blue-600' : 'text-slate-800'}`}
+                                >
+                                  {dateObj.getDate()}
+                                </div>
                               </div>
-                              <div 
-                                onClick={() => { setCalendarView('day'); setCurrentDate(dateObj); }}
-                                title="คลิกเพื่อดูรายละเอียดรายวัน"
-                                className={`text-base md:text-2xl font-bold mt-1 cursor-pointer transition-colors inline-block px-2 md:px-3 py-0.5 md:py-1 rounded-lg hover:bg-blue-100 hover:text-blue-700 ${dateObj.getDate() === new Date().getDate() && dateObj.getMonth() === new Date().getMonth() ? 'text-blue-600' : 'text-slate-800'}`}
-                              >
-                                {dateObj.getDate()}
-                              </div>
-                            </div>
-                          ))}
-                          {weekSlots.map((dateObj, idx) => {
-                            const dayTasks = getTasksForDateObj(dateObj);
-                            return (
-                              <div key={`w-${idx}`} className="bg-white min-h-[300px] md:min-h-[500px] p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200">
-                                {dayTasks.map(t => {
-                                    const border = getStatusColor(t[statusCol] || '', 1);
-                                    const softBg = getStatusColor(t[statusCol] || '', 0.1);
-                                    return (
-                                      <div key={t.id} style={{borderLeftColor: border}} className="p-1.5 md:p-3 rounded-lg md:rounded-xl border border-l-2 md:border-l-4 shadow-sm bg-white text-[10px] md:text-xs space-y-1 md:space-y-1.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
-                                        {compCol && <div className="font-bold text-slate-800 break-words leading-tight line-clamp-2">{t[compCol]}</div>}
-                                        {keyMap.colB && <div className="text-slate-500 font-medium truncate">{keyMap.colB}: {t[keyMap.colB]}</div>}
-                                        {keyMap.colD && <div className="text-slate-500 truncate">{keyMap.colD}: {t[keyMap.colD]}</div>}
-                                        <div className="flex items-center gap-1 text-slate-500 font-medium bg-slate-50 p-1 rounded text-[8px] md:text-xs">
-                                            <i className="fa-regular fa-clock"></i> {t[timeCol] || '-'}
+                            ))}
+                          </div>
+                          <div className="flex-1 overflow-hidden">
+                            <div className="grid grid-cols-7 border-l border-slate-200 h-full">
+                                {weekSlots.map((dateObj, idx) => {
+                                  const dayTasks = getTasksForDateObj(dateObj);
+                                  return (
+                                    <div key={`w-${idx}`} className="bg-white p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200 h-full overflow-hidden">
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1.5 min-h-0">
+                                            {dayTasks.map(t => {
+                                                const border = getStatusColor(t[statusCol] || '', 1);
+                                                const softBg = getStatusColor(t[statusCol] || '', 0.1);
+                                                
+                                                const colDate = getCollectionDateCol() ? t[getCollectionDateCol()] : (t[keyMap.date] || '-');
+                                                const colTime = t[keyMap.time] || '-';
+
+                                                return (
+                                                  <div key={t.id} style={{borderLeftColor: border}} className="p-1.5 md:p-3 rounded-lg md:rounded-xl border border-l-2 md:border-l-4 shadow-sm bg-white text-[10px] md:text-xs space-y-1 md:space-y-1.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 768) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
+                                                    {/* 1. ทีมงาน */}
+                                                    <div className="text-slate-500 font-semibold truncate mb-0.5">ทีม: {t[keyMap.team] || '-'}</div>
+                                                    
+                                                    {/* 2. ชื่อบริษัทลูกค้า */}
+                                                    <div className="font-bold text-slate-800 break-words leading-tight line-clamp-2">{t[keyMap.company] || 'ไม่ระบุชื่อ'}</div>
+                                                    
+                                                    {/* 3. วันและเวลาที่เข้าเก็บ */}
+                                                    <div className="flex items-center gap-1 text-slate-600 font-medium px-1 py-0.5 rounded text-[8px] md:text-[10px] w-fit mt-1">
+                                                        <i className="fa-regular fa-calendar-check"></i> {colDate} <i className="fa-regular fa-clock ml-0.5"></i> {colTime}
+                                                    </div>
+                                                    
+                                                    {/* 4. Status */}
+                                                    <div className="mt-1.5 text-center font-bold px-1 md:px-2 py-0.5 md:py-1 rounded-md md:rounded-lg border text-[8px] md:text-[10px]" style={{backgroundColor: softBg, color: border, borderColor: border}}>{t[statusCol]}</div>
+                                                  </div>
+                                                )
+                                            })}
                                         </div>
-                                        <div className="mt-1 md:mt-2 text-center font-bold px-1 md:px-2 py-0.5 md:py-1 rounded-md md:rounded-lg border text-[8px] md:text-xs" style={{backgroundColor: softBg, color: border, borderColor: border}}>{t[statusCol]}</div>
-                                      </div>
-                                    )
+                                    </div>
+                                  );
                                 })}
-                              </div>
-                            );
-                          })}
+                            </div>
+                          </div>
                         </div>
                       )}
 
                       {calendarView === 'day' && (() => {
                         const dayTasks = getTasksForDateObj(currentDate);
                         return (
-                          <div className="p-4 md:p-6 bg-white min-h-[500px]">
-                            <h4 className="text-base md:text-lg font-bold text-slate-800 mb-4 md:mb-6 border-b pb-3 md:pb-4 flex justify-between items-center">
+                          <div className="flex-1 flex flex-col p-4 md:p-6 bg-white min-h-0">
+                            <h4 className="text-base md:text-lg font-bold text-slate-800 mb-4 md:mb-6 border-b pb-3 md:pb-4 flex justify-between items-center shrink-0">
                               <span><i className="fa-regular fa-calendar-check text-blue-600 mr-2"></i> ตารางงานประจำวัน</span>
                               <span className="text-xs md:text-sm font-medium bg-blue-50 text-blue-700 px-3 md:px-4 py-1 md:py-1.5 rounded-full shadow-sm">{dayTasks.length} งาน</span>
                             </h4>
-                            {dayTasks.length === 0 ? (
-                              <div className="text-center text-slate-400 py-12 md:py-20 flex flex-col items-center">
-                                  <i className="fa-regular fa-calendar-xmark text-4xl md:text-6xl mb-3 md:mb-4 text-slate-200"></i>
-                                  <p className="text-sm md:text-lg font-medium">ไม่มีงานที่ต้องดำเนินการในวันนี้</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3 md:space-y-4">
-                                {dayTasks.map(t => {
-                                    const bgColor = getStatusColor(t[statusCol] || '', 1);
-                                    const softBg = getStatusColor(t[statusCol] || '', 0.1);
-                                    return (
-                                      <div key={t.id} className="flex bg-white rounded-xl md:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
-                                        <div style={{backgroundColor: bgColor}} className="w-2 md:w-3 shrink-0"></div>
-                                        <div className="p-3 md:p-5 flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-4 lg:items-center text-xs md:text-sm">
-                                          {keyMap.colB && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colB}</p><p className="font-bold text-slate-800 truncate text-sm md:text-base">{t[keyMap.colB] || '-'}</p></div>}
-                                          {compCol && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{compCol}</p><p className="font-bold text-slate-800 truncate text-sm md:text-base">{t[compCol] || '-'}</p></div>}
-                                          {keyMap.colD && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colD}</p><p className="text-slate-700 truncate">{t[keyMap.colD] || '-'}</p></div>}
-                                          {keyMap.colE && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colE}</p><p className="text-slate-700 truncate">{t[keyMap.colE] || '-'}</p></div>}
-                                          {keyMap.colF && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colF}</p><p className="text-slate-700 truncate">{t[keyMap.colF] || '-'}</p></div>}
-                                          {keyMap.colG && <div><p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">{keyMap.colG}</p><p className="text-slate-700 font-bold bg-slate-100 px-2 py-1 rounded inline-block mt-0.5 md:mt-1">{t[keyMap.colG] || '-'}</p></div>}
-                                          <div className="sm:col-span-2 md:col-span-3 lg:col-span-2 flex justify-start lg:justify-end mt-2 md:mt-0">
-                                              <span style={{backgroundColor: softBg, color: bgColor, borderColor: bgColor}} className="font-bold px-4 md:px-6 py-1.5 md:py-2 rounded-lg md:rounded-xl border-2 text-center min-w-[120px] md:min-w-[160px] shadow-sm">
-                                                  {t[statusCol] || 'ไม่มีสถานะ'}
-                                              </span>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                                {dayTasks.length === 0 ? (
+                                  <div className="text-center text-slate-400 py-12 md:py-20 flex flex-col items-center">
+                                      <i className="fa-regular fa-calendar-xmark text-4xl md:text-6xl mb-3 md:mb-4 text-slate-200"></i>
+                                      <p className="text-sm md:text-lg font-medium">ไม่มีงานที่ต้องดำเนินการในวันนี้</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-3 md:space-y-4">
+                                    {dayTasks.map(t => {
+                                        const bgColor = getStatusColor(t[statusCol] || '', 1);
+                                        const softBg = getStatusColor(t[statusCol] || '', 0.1);
+                                        
+                                        const cidVal = cidCol ? t[cidCol] : '';
+                                        const companyVal = t[keyMap.company] || '-';
+                                        
+                                        const contactVal = (keyMap.contactName && t[keyMap.contactName]) ? t[keyMap.contactName] : 'ไม่ระบุ';
+                                        const phoneVal = (keyMap.phone && t[keyMap.phone]) ? t[keyMap.phone] : '';
+                                        
+                                        const collDateCol = getCollectionDateCol();
+                                        const collectionDateVal = collDateCol ? t[collDateCol] : (t[keyMap.date] || '-');
+                                        const collectionTimeVal = t[keyMap.time] || '-';
+                                        
+                                        return (
+                                          <div key={t.id} className="flex bg-white rounded-xl md:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer relative" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
+                                            <div style={{backgroundColor: bgColor}} className="w-2 md:w-3 shrink-0"></div>
+                                            
+                                            <div className="p-3 md:p-4 flex-1 flex flex-col text-xs md:text-sm min-w-0">
+                                                <div className="flex flex-col lg:flex-row gap-3 md:gap-4 lg:items-center w-full min-w-0">
+                                                    
+                                                    {/* กลุ่มข้อมูลด้านซ้าย */}
+                                                    <div className="flex-1 flex flex-col lg:flex-row gap-3 lg:gap-4 lg:items-center min-w-0">
+                                                        
+                                                        {/* 1. ทีมงาน */}
+                                                        <div className="flex flex-col justify-center items-start shrink-0 lg:pr-4 lg:border-r border-slate-200">
+                                                            <p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">ทีมงาน</p>
+                                                            <div className="px-2 py-1 md:py-1.5 rounded-md text-sm md:text-base font-bold border w-24 md:w-32 text-center truncate shadow-sm" style={{ backgroundColor: getTeamColorStyle(t[keyMap.team]).bg, color: getTeamColorStyle(t[keyMap.team]).text, borderColor: getTeamColorStyle(t[keyMap.team]).border }} title={t[keyMap.team] || 'ไม่ระบุทีม'}>
+                                                                {t[keyMap.team] || 'ไม่ระบุทีม'}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 2. บริษัทลูกค้า + CID */}
+                                                        <div className="flex-1 flex flex-col justify-center overflow-hidden min-w-0 lg:pr-2">
+                                                            <p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">CID / บริษัทลูกค้า</p>
+                                                            <p className="font-bold text-slate-800 text-sm md:text-base leading-tight truncate mt-0.5" title={`${cidVal ? '['+cidVal+'] ' : ''}${companyVal}`}>
+                                                                {cidVal && <span className="text-blue-600 mr-1">[{cidVal}]</span>}
+                                                                <span>{companyVal}</span>
+                                                            </p>
+                                                        </div>
+
+                                                        {/* 3 & 4. ผู้ประสานงาน และ เข้าเก็บ */}
+                                                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-6 shrink-0 lg:pl-2">
+                                                            {/* 3. ผู้ประสานงาน */}
+                                                            <div className="flex flex-col justify-center sm:w-40 lg:w-56">
+                                                                <p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">ผู้ประสานงาน / เบอร์โทร</p>
+                                                                <p className="text-slate-700 break-words font-medium mt-0.5">{contactVal}</p>
+                                                                {phoneVal && contactVal !== phoneVal && <p className="text-slate-500 text-xs mt-0.5 break-words"><i className="fa-solid fa-phone text-[10px]"></i> {phoneVal}</p>}
+                                                            </div>
+
+                                                            {/* 4. วันและเวลาที่เข้าเก็บ */}
+                                                            <div className="flex flex-col justify-center shrink-0">
+                                                                <p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider">เข้าเก็บ (วัน-เวลา)</p>
+                                                                <div className="flex items-center gap-2 mt-0.5 text-sm md:text-base font-bold text-slate-700">
+                                                                    <p>{collectionDateVal}</p>
+                                                                    {collectionTimeVal !== '-' && (
+                                                                        <p><i className="fa-regular fa-clock mr-1 text-slate-500 text-sm"></i>{collectionTimeVal}</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                    </div>
+
+                                                    {/* 5. Status (มีเส้นกั้นแนวตั้งสำหรับจอใหญ่) */}
+                                                    <div className="flex justify-start lg:justify-end mt-2 lg:mt-0 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-200 pt-3 lg:pt-0 lg:pl-4">
+                                                        <span style={{backgroundColor: softBg, color: bgColor, borderColor: bgColor}} className="font-bold px-4 md:px-6 py-1.5 md:py-2 rounded-lg md:rounded-xl border-2 text-center min-w-[120px] md:min-w-[140px] shadow-sm">
+                                                            {t[statusCol] || 'ไม่มีสถานะ'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* 6. หมายเหตุเพิ่มเติม (โชว์บรรทัดล่างสุดถ้ามีข้อมูล) */}
+                                                {noteCol && t[noteCol] && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-100 w-full">
+                                                        <p className="text-[10px] md:text-xs text-amber-600 font-semibold uppercase tracking-wider">หมายเหตุเพิ่มเติม</p>
+                                                        <p className="text-slate-600 text-xs mt-0.5 break-words">{t[noteCol]}</p>
+                                                    </div>
+                                                )}
+                                            </div>
                                           </div>
-                                        </div>
-                                      </div>
-                                    )
-                                })}
-                              </div>
-                            )}
+                                        )
+                                    })}
+                                  </div>
+                                )}
+                            </div>
                           </div>
                         );
                       })()}
                     </div>
                   </div>
                 )}
-
-                {/* --- 4. หน้าผู้ช่วย AI (Gemini) --- */}
-                {activeTab === 'ai' && (
-                  <div className="max-w-4xl mx-auto flex flex-col h-[calc(100vh-2rem)] animate-in fade-in duration-500 pt-8 md:pt-0 pb-4">
-                    <header className="mb-4 shrink-0 flex items-center gap-3">
-                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden md:block">
-                            <i className="fa-solid fa-bars"></i>
-                        </button>
-                        <div>
-                            <h2 className="text-xl md:text-3xl font-bold text-slate-900 flex items-center gap-2"><i className="fa-solid fa-sparkles text-amber-500"></i> ผู้ช่วย AI อัจฉริยะ</h2>
-                            <p className="text-xs md:text-sm text-slate-500 mt-1">วิเคราะห์ข้อมูล พิมพ์คำถามเกี่ยวกับตารางงานของคุณได้เลย</p>
-                        </div>
-                    </header>
-
-                    <div className="flex-1 bg-white rounded-2xl shadow-md border border-slate-200 flex flex-col overflow-hidden">
-                        
-                        {/* แชทประวัติ */}
-                        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50 custom-scrollbar">
-                            {chatHistory.map((msg, index) => (
-                                <div key={index} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl p-4 shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm'}`}>
-                                        {msg.role === 'model' && <div className="text-[10px] font-bold text-amber-500 mb-1 uppercase tracking-wider"><i className="fa-solid fa-robot mr-1"></i> Gemini AI</div>}
-                                        <div className="text-sm md:text-base leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                            {isChatLoading && (
-                                <div className="flex w-full justify-start">
-                                    <div className="bg-white border border-slate-200 rounded-2xl p-4 rounded-tl-sm shadow-sm flex gap-2">
-                                        <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                                        <div className="w-2 h-2 bg-slate-300 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={chatEndRef} />
-                        </div>
-
-                        {/* กล่องข้อความ และ ปุ่มแนะนำ */}
-                        <div className="p-4 border-t border-slate-200 bg-white">
-                            <div className="flex flex-wrap gap-2 mb-3">
-                                <button onClick={() => handleAskGemini('สรุปจำนวนงานแบ่งตามสถานะให้หน่อย')} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-full transition-colors border border-slate-200">สรุปตามสถานะ</button>
-                                <button onClick={() => handleAskGemini('มีงานของทีมไหนบ้างที่เกินกำหนด?')} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-full transition-colors border border-slate-200">งานที่เกินกำหนด</button>
-                                <button onClick={() => handleAskGemini('บอกชื่องานที่รอเข้าเก็บให้หน่อย')} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium px-3 py-1.5 rounded-full transition-colors border border-slate-200">งานที่รอเข้าเก็บ</button>
-                            </div>
-                            <div className="flex gap-2 items-center relative">
-                                <input 
-                                    type="text" 
-                                    value={chatInput} 
-                                    onChange={e => setChatInput(e.target.value)} 
-                                    onKeyPress={handleKeyPress}
-                                    placeholder="พิมพ์คำถามของคุณที่นี่..." 
-                                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all text-sm shadow-inner"
-                                    disabled={isChatLoading}
-                                />
-                                <button 
-                                    onClick={() => handleAskGemini()} 
-                                    disabled={isChatLoading || !chatInput.trim()}
-                                    className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all ${!chatInput.trim() || isChatLoading ? 'bg-slate-200 text-slate-400' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md active:scale-95'}`}
-                                >
-                                    <i className="fa-solid fa-paper-plane"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                  </div>
-                )}
               </main>
 
-              {/* Tooltip Component (กล่องลอยแสดงรายละเอียด - ตรวจสอบพิกัดไม่ให้ล้นจอมือถือ) */}
+              {/* Tooltip Component */}
               {tooltipData.visible && tooltipData.task && (
                 <div className="fixed z-[9999] bg-white p-4 md:p-5 rounded-xl md:rounded-2xl shadow-2xl border border-slate-200 w-[280px] md:w-80 pointer-events-none transition-opacity duration-150" style={{ left: tooltipData.x, top: tooltipData.y }}>
                     <div className="flex justify-between items-start mb-3 md:mb-4 border-b border-slate-100 pb-2 md:pb-3">
@@ -1725,9 +1789,9 @@
                     
                     <div className="flex justify-between items-center mb-2 md:mb-3 pb-2 md:pb-3 border-b border-slate-200 border-dashed">
                         <div>
-                            <span className="font-semibold text-slate-500 text-[9px] md:text-[10px] block uppercase tracking-wider">วันที่ และ เวลา:</span>
+                            <span className="font-semibold text-slate-500 text-[9px] md:text-[10px] block uppercase tracking-wider">วันที่และเวลาที่เข้าเก็บอุปกรณ์:</span>
                             <span className="text-emerald-600 text-xs md:text-sm font-bold flex items-center gap-1.5 mt-1">
-                                <i className="fa-regular fa-calendar-check"></i> {tooltipData.task[dateCol] || '-'} 
+                                <i className="fa-regular fa-calendar-check"></i> {getCollectionDateCol() ? tooltipData.task[getCollectionDateCol()] : (tooltipData.task[dateCol] || '-')} 
                                 <span className="text-slate-500 mx-1">|</span> 
                                 <i className="fa-regular fa-clock"></i> {tooltipData.task[timeCol] || '-'}
                             </span>
