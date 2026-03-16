@@ -30,9 +30,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 
     <style>
-        /* ล็อกหน้าจอ PC ให้พอดีกรอบ */
-        body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; overflow: hidden; height: 100vh; }
-        #root { height: 100%; }
+        /* แก้ไขปัญหา Mobile Landscape โดยใช้ 100dvh ที่ตัว Wrapper แทน */
+        body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
         
         .table-container::-webkit-scrollbar { height: 8px; width: 8px; }
         .table-container::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
@@ -395,13 +394,11 @@
                       uniqueTasksMap.set(mapKey, cleanData);
                   });
 
-                  // ✅ ระบบกรองข้อมูลซ้ำซ้อนและลบ Ghost Rows แบบขั้นสูง (Aggressive Deduplication)
+                  // ✅ กรองข้อมูลซ้ำ โดยลบการบล็อก CID ออกไป เพื่อให้โชว์ครบถ้วนตาม Sheet
                   const contentHashes = new Set();
-                  const uniqueTaskKeys = new Set();
 
                   const newTasks = Array.from(uniqueTasksMap.values()).filter(task => {
                       // ด่านที่ 1: กรองแถวว่าง (เช็คว่ามีข้อมูลสำคัญไหมนอกจากเศษวันเวลา)
-                      // ป้องกันปัญหากรณีลบแถวใน Sheet แล้ว GAS ส่งมาเป็นค่าว่าง
                       const hasVitalData = Object.keys(task).some(k => 
                           k !== 'id' && k !== '_rowIndex' && 
                           !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') &&
@@ -409,7 +406,7 @@
                       );
                       if (!hasVitalData) return false;
 
-                      // ด่านที่ 2: เช็คเนื้อหาซ้ำกันเป๊ะๆ (ป้องกันปัญหาจาก Google Script เวลาลบ/แทรกแถว)
+                      // ด่านที่ 2: เช็คเนื้อหาซ้ำกันเป๊ะๆ (ป้องกันปัญหาจาก Google Script)
                       const normalizedData = {};
                       Object.keys(task).sort().forEach(k => {
                           if (k !== 'id' && k !== '_rowIndex') {
@@ -417,24 +414,9 @@
                           }
                       });
                       const hash = JSON.stringify(normalizedData);
-                      if (contentHashes.has(hash)) return false; // ข้อมูลซ้ำ ไม่เอา
+                      if (contentHashes.has(hash)) return false; 
                       contentHashes.add(hash);
                       
-                      // ด่านที่ 3: กรองข้อมูลที่ลงซ้ำเอง (เช็คด้วย CID + ชื่อบริษัท)
-                      // ถ้า GAS เออเร่อส่งข้อมูล CID เดียวกันมา 2 รอบ จะแสดงแค่อันเดียว
-                      const taskKeys = Object.keys(task);
-                      let tempCidCol = taskKeys.find(c => c.toLowerCase().includes('cid')) || '';
-                      let tempCompCol = taskKeys.find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ'].some(kw => c.toLowerCase().includes(kw))) || '';
-                      
-                      const cidVal = tempCidCol ? String(task[tempCidCol] || '').trim() : '';
-                      const compVal = tempCompCol ? String(task[tempCompCol] || '').trim() : '';
-                      
-                      if (cidVal !== '' && compVal !== '') {
-                          const uniqueKey = `${cidVal}_${compVal}`;
-                          if (uniqueTaskKeys.has(uniqueKey)) return false; // ซ่อนข้อมูลที่ซ้ำ
-                          uniqueTaskKeys.add(uniqueKey);
-                      }
-
                       return true;
                   });
 
@@ -1067,7 +1049,7 @@
           const visibleColumns = columns.filter(col => !hiddenColumns.includes(col));
 
           return (
-            <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden relative w-full">
+            <div className="flex h-[100dvh] w-full bg-slate-50 text-slate-900 overflow-hidden relative">
               
               {/* Floating Menu Button for Mobile */}
               <button 
