@@ -59,8 +59,10 @@
             cursor: pointer;
         }
         .editable-cell:hover { border-color: #e2e8f0; background: #f8fafc; }
+        /* สไตล์ตอนที่กำลังแก้ไข (Double-click) */
         .editable-cell.editing { border-color: #3b82f6; background: #ffffff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); cursor: text; }
         
+        /* สไตล์สำหรับหัวตาราง */
         .th-content {
             overflow: hidden;
             text-overflow: ellipsis;
@@ -85,6 +87,7 @@
         // --- ฟังก์ชันช่วยเหลือสำหรับจัดการวันที่และเวลา ---
         const formatSheetDate = (val) => {
             if (typeof val !== 'string') return val;
+            
             const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/) || val.match(/^\d{4}-\d{2}-\d{2}T/);
             if (isLongDate) {
                 const d = new Date(val);
@@ -380,6 +383,9 @@
           const [calendarView, setCalendarView] = useState('month');
           const [dashboardView, setDashboardView] = useState('overview'); 
 
+          // State สำหรับ Sub-tab ในหน้าตารางงาน
+          const [tasksSubTab, setTasksSubTab] = useState('subcontract');
+
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
           const [selectedStatuses, setSelectedStatuses] = useState([]);
@@ -518,7 +524,8 @@
 
           useEffect(() => {
               if (columns.length > 0) {
-                  const findCol = (keywords) => columns.find(c => keywords.some(kw => c.toLowerCase().includes(kw.toLowerCase()))) || '';
+                  // Safety Check: Optional Chaining (?.) for safe string parsing
+                  const findCol = (keywords) => columns.find(c => keywords.some(kw => c?.toLowerCase().includes(kw.toLowerCase()))) || '';
                   
                   const colB = columns.length > 1 ? columns[1] : '';
                   const colC = columns.length > 2 ? columns[2] : '';
@@ -526,15 +533,15 @@
                   const statusCol = findCol(['สถานะ', 'status']) || columns[columns.length - 1] || '';
 
                   const contactColName = findCol(['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ']);
-                  const phoneColName = columns.find(c => c !== contactColName && (c.includes('เบอร์') || c.toLowerCase().includes('tel') || c.toLowerCase().includes('phone') || c.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
+                  const phoneColName = columns.find(c => c !== contactColName && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
 
                   const timeColName = columns.find(c => {
-                      const lc = c.toLowerCase();
+                      const lc = c?.toLowerCase() || '';
                       return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time') || lc.includes('นัด'));
                   }) || colG;
 
                   const dateColName = columns.find(c => {
-                      const lc = c.toLowerCase();
+                      const lc = c?.toLowerCase() || '';
                       return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('วันที่เข้าเก็บ') || lc.includes('วันที่') || lc.includes('date'));
                   }) || columns[0];
 
@@ -670,17 +677,17 @@
 
           const { date: dateCol, status: statusCol, team: teamCol, company: compCol, time: timeCol } = keyMap;
 
-          const cidCol = columns.find(c => c.toLowerCase().includes('cid')) || '';
-          const equipYearCol = columns.find(c => c.toLowerCase().includes('year') || c.includes('ปี')) || '';
-          const noteCol = columns.find(c => c.includes('หมายเหตุ') || c.toLowerCase().includes('note')) || '';
+          const cidCol = columns.find(c => c?.toLowerCase().includes('cid')) || '';
+          const equipYearCol = columns.find(c => c?.toLowerCase().includes('year') || c?.includes('ปี')) || '';
+          const noteCol = columns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
           
           const overDueCol = columns.find(c => {
-              const lowerC = c.toLowerCase().replace(/\s+/g, '');
+              const lowerC = c?.toLowerCase()?.replace(/\s+/g, '') || '';
               return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด');
           }) || '';
 
           const getCollectionDateCol = () => {
-              return columns.find(c => c.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
+              return columns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
           };
 
           const getTaskEffectiveDateStr = (t) => {
@@ -1021,6 +1028,9 @@
               tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(lowerSearch)));
           }
 
+          // กรองข้อมูลแยกตาม Sub-tab (ตารางงาน)
+          const finalTableTasks = tasksSubTab === 'subcontract' ? tableTasks : [];
+
           const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
           const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
           const navigateCalendar = (dir) => {
@@ -1086,8 +1096,9 @@
             </button>
           );
 
+          // Safety Check: Optional Chaining ป้องกันหน้าจอขาวจากการอ่านค่าคอลัมน์ที่ Error
           const unwantedTooltipCols = columns.filter(c => {
-              const lc = c.toLowerCase().replace(/\s+/g, '');
+              const lc = c?.toLowerCase()?.replace(/\s+/g, '') || '';
               return lc.includes('แจ้งsub') || 
                      lc.includes('วันที่แจ้ง') ||
                      lc.includes('วันที่ลงข้อมูล') ||
@@ -1151,7 +1162,19 @@
                     )}
                   </div>
 
-                  <SidebarItem id="tasks" iconClass="fa-solid fa-table-list" label="ตารางงาน (All Data)" />
+                  <div className="space-y-1">
+                    <button onClick={() => { setActiveTab('tasks'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tasks' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+                      <i className={`fa-solid fa-table-list text-lg w-6 text-center ${activeTab === 'tasks' ? 'text-blue-600' : 'opacity-70'}`}></i>
+                      <span className="whitespace-nowrap">ตารางงาน (All Data)</span>
+                    </button>
+                    {activeTab === 'tasks' && isSidebarOpen && (
+                        <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
+                            <button onClick={() => { setTasksSubTab('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
+                            <button onClick={() => { setTasksSubTab('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
+                        </div>
+                    )}
+                  </div>
+
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
 
                 </nav>
@@ -1316,288 +1339,288 @@
 
                 {/* --- 2. หน้าตารางงาน (ปลดล็อกให้เลื่อนทั้งหน้าจอ โดยที่หัวตาราง Sticky ได้) --- */}
                 {activeTab === 'tasks' && (
-                  <div className="absolute inset-0 overflow-y-auto custom-scrollbar bg-slate-50">
-                    <div className="flex flex-col min-h-full sm:min-h-[700px] p-2 md:p-4 lg:p-6 animate-in fade-in duration-500">
-                      <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block">
-                              <i className="fa-solid fa-bars"></i>
-                          </button>
-                          <div>
-                              <h2 className="text-xl md:text-3xl font-bold text-slate-900">ข้อมูลตารางงานทั้งหมด</h2>
-                          </div>
+                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 animate-in fade-in duration-500 overflow-hidden bg-slate-50 min-h-0">
+                    <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block">
+                            <i className="fa-solid fa-bars"></i>
+                        </button>
+                        <div>
+                            <h2 className="text-xl md:text-3xl font-bold text-slate-900">ข้อมูลตารางงานทั้งหมด</h2>
                         </div>
-                      </header>
-
-                      {firebaseError && (
-                          <div className="shrink-0 bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
-                              <div className="flex items-center">
-                                  <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
-                                  <div>
-                                      <p className="text-red-700 font-bold">ไม่สามารถดึงข้อมูลตารางได้</p>
-                                      <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
-                                  </div>
-                              </div>
-                          </div>
-                      )}
-
-                      <div className="shrink-0 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 md:space-y-4 mb-4">
-                          <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
-                              <div className="relative w-full">
-                                  <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                  <input type="text" placeholder="พิมพ์คำค้นหา (ค้นหาได้ทุกคอลัมน์)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
-                              </div>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-3 border-t border-slate-100">
-                              <span className="text-xs md:text-sm font-semibold text-slate-600 hidden md:inline-block"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
-                              {teamCol && (
-                                  <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>
-                              )}
-                              
-                              {dateCol && (
-                                  <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                      <option value="All">เดือนเข้าเก็บ (ทั้งหมด)</option>
-                                      {uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}
-                                  </select>
-                              )}
-                              {equipYearCol && (
-                                  <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                      <option value="All">ปี Equipment (ทั้งหมด)</option>
-                                      {uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}
-                                  </select>
-                              )}
-                              {statusCol && (
-                                  <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                      <option value="All">Status (ทั้งหมด)</option>
-                                      {uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}
-                                  </select>
-                              )}
-                              
-                              {overDueCol && (
-                                  <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]">
-                                      <option value="All">นัดหมายลูกค้า (ทั้งหมด)</option>
-                                      <option value="ครบกำหนด">ครบกำหนด (0 วัน)</option>
-                                      <option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option>
-                                      <option value="เกินกำหนด">เกินกำหนด (เกิน...)</option>
-                                  </select>
-                              )}
-                              
-                              <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto">
-                                  <ColumnToggle columns={columns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} />
-                                  <button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-500 px-3 md:px-4 py-1.5 rounded-lg border border-red-200 hover:border-red-500 transition-colors h-[38px]" title="ล้างตัวกรอง และ ยกเลิกการเรียงลำดับ">
-                                      <i className="fa-solid fa-rotate-left"></i> ล้างตัวกรอง
-                                  </button>
-                              </div>
-                          </div>
                       </div>
+                    </header>
 
-                      {/* ตารางงาน: มี overflow-x ให้เลื่อนซ้ายขวาได้ แต่เลื่อนลงจะตามหน้าจอหลัก ทำให้ Thead แนบติดจอด้านบนได้ (Sticky) */}
-                      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-[500px] shrink-0 mb-8 mt-2 relative overflow-hidden">
-                        <div className="flex-1 overflow-auto table-container rounded-t-2xl">
-                          <table className="w-full text-left border-collapse text-sm relative" style={{ tableLayout: 'auto' }}>
-                            <thead className="bg-slate-800 shadow-sm relative sticky top-0 z-30">
-                              <tr>
-                                {visibleColumns.length > 0 ? visibleColumns.map((col, idx) => {
-                                    const hasFixedWidth = colWidths[col] !== undefined;
-                                    return (
-                                        <th 
-                                            key={idx} 
-                                            className="border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none sortable-header sticky top-0 z-20 bg-slate-800"
-                                            style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
-                                            onClick={() => handleSort(col)}
-                                            title="คลิกเพื่อเรียงลำดับ"
-                                        >
-                                            <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
-                                                <div className="th-content text-xs md:text-sm font-semibold text-white">
-                                                    {col}
-                                                </div>
-                                                <div className="ml-2 text-white opacity-70 flex-shrink-0">
-                                                    {sortConfig.key === col ? (
-                                                        sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>
-                                                    ) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}
-                                                </div>
-                                            </div>
-                                            <div 
-                                                onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, col); }}
-                                                onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickResize(col); }}
-                                                title="ลากปรับขนาด / ดับเบิ้ลคลิกพอดีข้อความ"
-                                                className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
-                                            >
-                                                <div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div>
-                                            </div>
-                                        </th>
-                                    );
-                                }) : (
-                                    <th className="p-4 text-white sticky top-0 bg-slate-800 z-20">ตารางงาน</th>
-                                )}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200">
-                              {isLoading ? (
-                                  <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
-                              ) : firebaseError ? (
-                                  <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-red-500"><i className="fa-solid fa-triangle-exclamation mr-2"></i>ไม่พบข้อมูล กรุณาตรวจสอบการตั้งค่า Firebase</td></tr>
-                              ) : tasks.length === 0 ? (
-                                  <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า (รอการซิงค์ข้อมูลจาก Sheet)</td></tr>
-                              ) : tableTasks.length === 0 ? (
-                                  <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูลที่ค้นหา...</td></tr>
-                              ) : tableTasks.map((task) => (
-                                <tr key={task.id} className="hover:bg-slate-50 transition-colors">
-                                  {visibleColumns.map((col, idx) => {
-                                      const hasFixedWidth = colWidths[col] !== undefined;
-                                      const isStatusCell = col === statusCol;
-                                      const isTeamCell = col === teamCol;
-                                      const isOverDueCell = col === overDueCol; 
-                                      
-                                      const val = task[col] || '';
-                                      const cleanVal = getCleanStatus(val);
-                                      const cellId = `${task.id}-${col}`;
-                                      const isEditing = editingCell === cellId;
-                                      let cellStyle = `editable-cell text-xs md:text-sm ${isEditing ? 'editing text-slate-800' : ''}`;
-                                      let styleObj = {};
-                                      
-                                      if (isStatusCell) {
-                                          const color = getStatusColor(cleanVal, 0.1);
-                                          const textColor = getStatusColor(cleanVal, 1);
-                                          styleObj = { backgroundColor: color, color: textColor, fontWeight: 'bold', borderRadius: '6px' };
-                                      } else if (isTeamCell) {
-                                          const tColor = getTeamColorStyle(val);
-                                          styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                      } else if (isOverDueCell && cleanVal) {
-                                          let num = NaN;
-                                          const match = cleanVal.match(/-?\d+/);
-                                          if(match) num = parseInt(match[0], 10);
+                    {firebaseError && (
+                        <div className="shrink-0 bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm mb-4">
+                            <div className="flex items-center">
+                                <i className="fa-solid fa-circle-exclamation text-red-500 text-xl mr-3"></i>
+                                <div>
+                                    <p className="text-red-700 font-bold">ไม่สามารถดึงข้อมูลตารางได้</p>
+                                    <p className="text-red-600 text-sm mt-1">{firebaseError}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                                          if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) {
-                                              styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                          } else if (num === 0 || cleanVal.includes('ครบกำหนด') || cleanVal === '0') {
-                                              styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
-                                          } else if (num > 0 || cleanVal.includes('เหลือ')) {
-                                              styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
-                                          }
-                                      }
-
-                                      return (
-                                          <td 
-                                              key={idx} 
-                                              className="p-1 md:p-1.5 align-middle border-r border-slate-100 overflow-hidden text-ellipsis"
-                                              style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
-                                          >
-                                              {isStatusCell ? (
-                                                  <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
-                                                      <div 
-                                                          contentEditable={isEditing}
-                                                          suppressContentEditableWarning={true}
-                                                          className={`flex-1 px-2 md:px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`}
-                                                          style={{ minHeight: '28px', lineHeight: '20px' }}
-                                                          onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
-                                                          onBlur={e => {
-                                                              handleCellChange(task.id, col, e.target.innerText);
-                                                              setEditingCell(null);
-                                                          }}
-                                                          title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
-                                                      >
-                                                          {val}
-                                                      </div>
-                                                      <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer" title="เลือกจากสถานะเดิม">
-                                                          <i className="fa-solid fa-chevron-down text-[10px]"></i>
-                                                          <select 
-                                                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                              onChange={e => {
-                                                                  if (e.target.value) handleCellChange(task.id, col, e.target.value);
-                                                                  e.target.value = ''; 
-                                                              }}
-                                                          >
-                                                              <option value="" disabled selected></option>
-                                                              {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                                                          </select>
-                                                      </div>
-                                                  </div>
-                                              ) : (
-                                                  <div 
-                                                      contentEditable={isEditing}
-                                                      suppressContentEditableWarning={true}
-                                                      className={cellStyle} 
-                                                      style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer' }}
-                                                      onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
-                                                      onBlur={e => {
-                                                          handleCellChange(task.id, col, e.target.innerText);
-                                                          setEditingCell(null);
-                                                      }}
-                                                      title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
-                                                  >
-                                                      {val}
-                                                  </div>
-                                              )}
-                                          </td>
-                                      )
-                                  })}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <div className="shrink-0 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200 space-y-3 md:space-y-4 mb-4">
+                        <div className="flex flex-col md:flex-row items-center gap-3 md:gap-4">
+                            <div className="relative w-full">
+                                <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" placeholder="พิมพ์คำค้นหา (ค้นหาได้ทุกคอลัมน์)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                            </div>
                         </div>
                         
-                        <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex items-center justify-between rounded-b-2xl">
-                            <div className="text-xs md:text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
-                                <i className="fa-solid fa-list-check"></i>
-                                แสดงผลทั้งหมด {tableTasks.length} รายการ
+                        <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-3 border-t border-slate-100">
+                            <span className="text-xs md:text-sm font-semibold text-slate-600 hidden md:inline-block"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
+                            {teamCol && (
+                                <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>
+                            )}
+                            
+                            {dateCol && (
+                                <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
+                                    <option value="All">เดือนเข้าเก็บ (ทั้งหมด)</option>
+                                    {uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}
+                                </select>
+                            )}
+                            {equipYearCol && (
+                                <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
+                                    <option value="All">ปี Equipment (ทั้งหมด)</option>
+                                    {uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            )}
+                            {statusCol && (
+                                <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]">
+                                    <option value="All">Status (ทั้งหมด)</option>
+                                    {uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            )}
+                            
+                            {overDueCol && (
+                                <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]">
+                                    <option value="All">นัดหมายลูกค้า (ทั้งหมด)</option>
+                                    <option value="ครบกำหนด">ครบกำหนด (0 วัน)</option>
+                                    <option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option>
+                                    <option value="เกินกำหนด">เกินกำหนด (เกิน...)</option>
+                                </select>
+                            )}
+                            
+                            <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto">
+                                <ColumnToggle columns={columns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} />
+                                <button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-500 px-3 md:px-4 py-1.5 rounded-lg border border-red-200 hover:border-red-500 transition-colors h-[38px]" title="ล้างตัวกรอง และ ยกเลิกการเรียงลำดับ">
+                                    <i className="fa-solid fa-rotate-left"></i> ล้างตัวกรอง
+                                </button>
                             </div>
-                            <div className="text-[10px] md:text-xs text-slate-400 hidden sm:block">ดับเบิ้ลคลิกเพื่อแก้ไขข้อมูล (ซิงค์ไปที่ Firebase โดยตรง)</div>
                         </div>
+                    </div>
+
+                    {/* ตารางงานที่ล็อกหัวคอลัมน์ให้อยู่คงที่ และเลื่อนข้อมูลภายในได้ */}
+                    <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden relative">
+                      <div className="flex-1 overflow-auto table-container">
+                        <table className="w-full text-left border-collapse text-sm relative" style={{ tableLayout: 'auto' }}>
+                          <thead className="bg-slate-800 shadow-sm shadow-slate-800/50 sticky top-0 z-30">
+                            <tr>
+                              {visibleColumns.length > 0 ? visibleColumns.map((col, idx) => {
+                                  const hasFixedWidth = colWidths[col] !== undefined;
+                                  return (
+                                      <th 
+                                          key={idx} 
+                                          className="bg-slate-800 border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none sortable-header sticky top-0 z-30"
+                                          style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
+                                          onClick={() => handleSort(col)}
+                                          title="คลิกเพื่อเรียงลำดับ"
+                                      >
+                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
+                                              <div className="th-content text-xs md:text-sm font-semibold text-white">
+                                                  {col}
+                                              </div>
+                                              <div className="ml-2 text-white opacity-70 flex-shrink-0">
+                                                  {sortConfig.key === col ? (
+                                                      sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>
+                                                  ) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}
+                                              </div>
+                                          </div>
+                                          <div 
+                                              onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, col); }}
+                                              onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickResize(col); }}
+                                              title="ลากปรับขนาด / ดับเบิ้ลคลิกพอดีข้อความ"
+                                              className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"
+                                          >
+                                              <div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div>
+                                          </div>
+                                      </th>
+                                  );
+                              }) : (
+                                  <th className="p-4 text-white sticky top-0 bg-slate-800 z-30">ตารางงาน</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {isLoading ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
+                            ) : firebaseError ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-red-500"><i className="fa-solid fa-triangle-exclamation mr-2"></i>ไม่พบข้อมูล กรุณาตรวจสอบการตั้งค่า Firebase</td></tr>
+                            ) : tasks.length === 0 ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า (รอการซิงค์ข้อมูลจาก Sheet)</td></tr>
+                            ) : finalTableTasks.length === 0 ? (
+                                <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">
+                                    {tasksSubTab === 'ns' ? 'ไม่มีข้อมูลสำหรับ Jobs for NS' : 'ไม่พบข้อมูลที่ค้นหา...'}
+                                </td></tr>
+                            ) : finalTableTasks.map((task) => (
+                              <tr key={task.id} className="hover:bg-slate-50 transition-colors">
+                                {visibleColumns.map((col, idx) => {
+                                    const hasFixedWidth = colWidths[col] !== undefined;
+                                    const isStatusCell = col === statusCol;
+                                    const isTeamCell = col === teamCol;
+                                    const isOverDueCell = col === overDueCol; 
+                                    
+                                    const val = task[col] || '';
+                                    const cleanVal = getCleanStatus(val);
+                                    const cellId = `${task.id}-${col}`;
+                                    const isEditing = editingCell === cellId;
+                                    let cellStyle = `editable-cell text-xs md:text-sm ${isEditing ? 'editing text-slate-800' : ''}`;
+                                    let styleObj = {};
+                                    
+                                    if (isStatusCell) {
+                                        const color = getStatusColor(cleanVal, 0.1);
+                                        const textColor = getStatusColor(cleanVal, 1);
+                                        styleObj = { backgroundColor: color, color: textColor, fontWeight: 'bold', borderRadius: '6px' };
+                                    } else if (isTeamCell) {
+                                        const tColor = getTeamColorStyle(val);
+                                        styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                    } else if (isOverDueCell && cleanVal) {
+                                        let num = NaN;
+                                        const match = cleanVal.match(/-?\d+/);
+                                        if(match) num = parseInt(match[0], 10);
+
+                                        if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) {
+                                            styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                        } else if (num === 0 || cleanVal.includes('ครบกำหนด') || cleanVal === '0') {
+                                            styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
+                                        } else if (num > 0 || cleanVal.includes('เหลือ')) {
+                                            styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                        }
+                                    }
+
+                                    return (
+                                        <td 
+                                            key={idx} 
+                                            className="p-1 md:p-1.5 align-middle border-r border-slate-100 overflow-hidden text-ellipsis"
+                                            style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}
+                                        >
+                                            {isStatusCell ? (
+                                                <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
+                                                    <div 
+                                                        contentEditable={isEditing}
+                                                        suppressContentEditableWarning={true}
+                                                        className={`flex-1 px-2 md:px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`}
+                                                        style={{ minHeight: '28px', lineHeight: '20px' }}
+                                                        onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
+                                                        onBlur={e => {
+                                                            handleCellChange(task.id, col, e.target.innerText);
+                                                            setEditingCell(null);
+                                                        }}
+                                                        title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
+                                                    >
+                                                        {val}
+                                                    </div>
+                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer" title="เลือกจากสถานะเดิม">
+                                                        <i className="fa-solid fa-chevron-down text-[10px]"></i>
+                                                        <select 
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                            value=""
+                                                            onChange={e => {
+                                                                if (e.target.value) handleCellChange(task.id, col, e.target.value);
+                                                            }}
+                                                        >
+                                                            <option value="" disabled></option>
+                                                            {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div 
+                                                    contentEditable={isEditing}
+                                                    suppressContentEditableWarning={true}
+                                                    className={cellStyle} 
+                                                    style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer' }}
+                                                    onDoubleClick={(e) => handleCellDoubleClick(e, cellId)}
+                                                    onBlur={e => {
+                                                        handleCellChange(task.id, col, e.target.innerText);
+                                                        setEditingCell(null);
+                                                    }}
+                                                    title={isEditing ? '' : "ดับเบิ้ลคลิกเพื่อแก้ไข"}
+                                                >
+                                                    {val}
+                                                </div>
+                                            )}
+                                        </td>
+                                    )
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex items-center justify-between z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                          <div className="text-xs md:text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
+                              <i className="fa-solid fa-list-check"></i>
+                              แสดงผลทั้งหมด {finalTableTasks.length} รายการ
+                          </div>
+                          <div className="text-[10px] md:text-xs text-slate-400 hidden sm:block">ดับเบิ้ลคลิกเพื่อแก้ไขข้อมูล (ซิงค์ไปที่ Firebase โดยตรง)</div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* --- 3. หน้าปฏิทิน (เลื่อนได้ทั้งหน้าจอ ตรึงเฉพาะหัววันที่) --- */}
+                {/* --- 3. หน้าปฏิทิน (เลื่อนได้เฉพาะส่วนข้อมูลปฏิทิน ตรึง Header และ Filter) --- */}
                 {activeTab === 'calendar' && (
-                  <div className="absolute inset-0 overflow-y-auto custom-scrollbar bg-slate-50">
-                    <div className="flex flex-col min-h-full sm:min-h-[700px] p-2 md:p-4 lg:p-6 animate-in fade-in duration-500">
-                      <header className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block">
-                              <i className="fa-solid fa-bars"></i>
-                          </button>
-                          <div>
-                              <h2 className="text-xl md:text-3xl font-bold text-slate-900">ปฏิทิน (Calendar)</h2>
-                              <p className="text-xs md:text-sm text-slate-500 mt-1">ข้อมูลจะดึงมาจากตารางงานอัตโนมัติ ชี้ที่นัดหมายเพื่อดูรายละเอียด</p>
+                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 animate-in fade-in duration-500 overflow-hidden bg-slate-50 min-h-0">
+                    <header className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block">
+                            <i className="fa-solid fa-bars"></i>
+                        </button>
+                        <div>
+                            <h2 className="text-xl md:text-3xl font-bold text-slate-900">ปฏิทิน (Calendar)</h2>
+                            <p className="text-xs md:text-sm text-slate-500 mt-1">ข้อมูลจะดึงมาจากตารางงานอัตโนมัติ ชี้ที่นัดหมายเพื่อดูรายละเอียด</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-3 w-full md:w-auto">
+                        <div className="flex bg-slate-200 p-1 rounded-lg w-full sm:w-auto">
+                          <button onClick={() => setCalendarView('day')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'day' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>รายวัน</button>
+                          <button onClick={() => setCalendarView('week')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'week' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>สัปดาห์</button>
+                          <button onClick={() => setCalendarView('month')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>เดือน</button>
+                        </div>
+                        <div className="flex items-center justify-between w-full md:w-auto gap-4">
+                          <h3 className="text-base md:text-xl font-bold text-blue-700 min-w-[140px] md:min-w-[180px] text-left md:text-right">
+                            {calendarView === 'month' && `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+                            {calendarView === 'week' && `สัปดาห์ที่ ${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
+                            {calendarView === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
+                          </h3>
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => navigateCalendar(-1)} className="p-1.5 md:p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-left text-xs md:text-base"></i></button>
+                            <button onClick={() => setCurrentDate(new Date())} className="px-2 md:px-3 bg-white border rounded-lg hover:bg-slate-50 text-xs md:text-sm font-bold">วันนี้</button>
+                            <button onClick={() => navigateCalendar(1)} className="p-1.5 md:p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-right text-xs md:text-base"></i></button>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-3 w-full md:w-auto">
-                          <div className="flex bg-slate-200 p-1 rounded-lg w-full sm:w-auto">
-                            <button onClick={() => setCalendarView('day')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'day' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>รายวัน</button>
-                            <button onClick={() => setCalendarView('week')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'week' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>สัปดาห์</button>
-                            <button onClick={() => setCalendarView('month')} className={`flex-1 sm:flex-none px-3 md:px-4 py-1.5 text-xs md:text-sm font-semibold rounded-md ${calendarView === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>เดือน</button>
-                          </div>
-                          <div className="flex items-center justify-between w-full md:w-auto gap-4">
-                            <h3 className="text-base md:text-xl font-bold text-blue-700 min-w-[140px] md:min-w-[180px] text-left md:text-right">
-                              {calendarView === 'month' && `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
-                              {calendarView === 'week' && `สัปดาห์ที่ ${currentDate.getDate()} ${monthNames[currentDate.getMonth()]}`}
-                              {calendarView === 'day' && `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`}
-                            </h3>
-                            <div className="flex gap-1 shrink-0">
-                              <button onClick={() => navigateCalendar(-1)} className="p-1.5 md:p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-left text-xs md:text-base"></i></button>
-                              <button onClick={() => setCurrentDate(new Date())} className="px-2 md:px-3 bg-white border rounded-lg hover:bg-slate-50 text-xs md:text-sm font-bold">วันนี้</button>
-                              <button onClick={() => navigateCalendar(1)} className="p-1.5 md:p-2 bg-white border rounded-lg hover:bg-slate-50"><i className="fa-solid fa-chevron-right text-xs md:text-base"></i></button>
-                            </div>
-                          </div>
-                        </div>
-                      </header>
+                      </div>
+                    </header>
 
+                    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                       {calendarView === 'month' && (
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-[600px] shrink-0 mb-8 relative">
-                          <div className="grid grid-cols-7 border-b border-slate-200 shrink-0 bg-slate-50 z-10 sticky top-0 rounded-t-2xl shadow-sm">
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+                          <div className="grid grid-cols-7 border-l border-t border-slate-200 shrink-0 bg-slate-50 z-10">
                             {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map((d, i) => (
-                              <div key={d} className="py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600 border-r last:border-r-0 border-slate-200">
+                              <div key={d} className="py-2 md:py-3 text-center text-xs md:text-sm font-semibold text-slate-600 border-r border-b border-slate-200">
                                   <span className="md:hidden">{d}</span>
                                   <span className="hidden md:inline">{['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][i]}</span>
                               </div>
                             ))}
                           </div>
-                          <div className="flex-1 overflow-y-auto custom-scrollbar rounded-b-2xl">
-                              <div className="grid grid-cols-7 h-full min-h-[500px] auto-rows-fr">
+                          <div className="flex-1 overflow-y-auto custom-scrollbar">
+                              <div className="grid grid-cols-7 border-l border-slate-200 h-full min-h-[500px] auto-rows-fr">
                                 {monthSlots.map((dateObj, idx) => {
                                   const dayTasks = getTasksForDateObj(dateObj);
                                   return (
@@ -1653,8 +1676,8 @@
                       )}
 
                       {calendarView === 'week' && (
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-[500px] shrink-0 mb-8 relative">
-                          <div className="grid grid-cols-7 border-b border-slate-200 shrink-0 bg-slate-50 z-10 sticky top-0 rounded-t-2xl shadow-sm">
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+                          <div className="grid grid-cols-7 border-l border-t border-slate-200 shrink-0 bg-slate-50 z-10">
                             {weekSlots.map((dateObj, idx) => (
                               <div key={idx} className="py-2 md:py-3 text-center border-r border-b border-slate-200">
                                 <div className="text-[10px] md:text-sm font-semibold text-slate-500">
@@ -1671,12 +1694,12 @@
                               </div>
                             ))}
                           </div>
-                          <div className="flex-1 overflow-y-auto custom-scrollbar rounded-b-2xl">
-                            <div className="grid grid-cols-7 h-full min-h-[400px]">
+                          <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-7 border-l border-slate-200 h-full min-h-[400px]">
                                 {weekSlots.map((dateObj, idx) => {
                                   const dayTasks = getTasksForDateObj(dateObj);
                                   return (
-                                    <div key={`w-${idx}`} className="bg-white p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200 h-full overflow-hidden">
+                                    <div key={`w-${idx}`} className="bg-white p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200 h-full overflow-hidden min-h-0">
                                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1.5 min-h-0">
                                             {dayTasks.map(t => {
                                                 const border = getStatusColor(t[statusCol] || '', 1);
@@ -1715,12 +1738,12 @@
                       {calendarView === 'day' && (() => {
                         const dayTasks = getTasksForDateObj(currentDate);
                         return (
-                          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col p-4 md:p-6 min-h-[500px] shrink-0 mb-8">
+                          <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col p-4 md:p-6 min-h-0 overflow-hidden">
                             <h4 className="text-base md:text-lg font-bold text-slate-800 mb-4 md:mb-6 border-b pb-3 md:pb-4 flex justify-between items-center shrink-0">
                               <span><i className="fa-regular fa-calendar-check text-blue-600 mr-2"></i> ตารางงานประจำวัน</span>
                               <span className="text-xs md:text-sm font-medium bg-blue-50 text-blue-700 px-3 md:px-4 py-1 md:py-1.5 rounded-full shadow-sm">{dayTasks.length} งาน</span>
                             </h4>
-                            <div className="flex-1 pr-2">
+                            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
                                 {dayTasks.length === 0 ? (
                                   <div className="text-center text-slate-400 py-12 md:py-20 flex flex-col items-center">
                                       <i className="fa-regular fa-calendar-xmark text-4xl md:text-6xl mb-3 md:mb-4 text-slate-200"></i>
