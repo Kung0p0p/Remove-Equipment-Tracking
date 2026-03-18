@@ -21,7 +21,7 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDKs (Compat version for script tags) -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 
@@ -55,7 +55,6 @@
         .sortable-header { cursor: pointer; transition: background 0.2s; position: relative; }
         .sortable-header:hover { background-color: #334155 !important; }
 
-        /* Styles for Line Preview */
         .line-preview {
             background-color: #84A98C;
             background-image: url('https://www.transparenttextures.com/patterns/cubes.png');
@@ -260,6 +259,428 @@
             );
         };
 
+        // -------------------------------------------------------------
+        // --- COMPONENT: MASTER DATA MANAGEMENT ---
+        // -------------------------------------------------------------
+        const MasterDataTab = ({ masterData, masterDataRef }) => {
+            const [isEditing, setIsEditing] = useState(false);
+            const [tempData, setTempData] = useState(masterData);
+
+            useEffect(() => { setTempData(masterData); }, [masterData]);
+
+            const handleSaveZone = (index, field, val) => {
+                const newZones = [...tempData.zones];
+                newZones[index][field] = val;
+                setTempData({ ...tempData, zones: newZones });
+            };
+            const addZone = () => {
+                const newZones = [...tempData.zones, { id: `zone_${Date.now()}`, name: `โซนใหม่ ${tempData.zones.length + 1}`, districts: "", teams: "" }];
+                setTempData({ ...tempData, zones: newZones });
+            };
+            const delZone = (index) => {
+                if(confirm('ยืนยันลบโซนนี้?')) {
+                    const newZones = tempData.zones.filter((_, i) => i !== index);
+                    setTempData({ ...tempData, zones: newZones });
+                }
+            };
+
+            const handleSave = () => {
+                const newTeamsArr = typeof tempData.teams === 'string' 
+                    ? tempData.teams.split(',').map(t=>t.trim()).filter(Boolean) 
+                    : tempData.teams;
+
+                const dataToSave = {
+                    zones: tempData.zones,
+                    teams: newTeamsArr
+                };
+
+                masterDataRef.set(dataToSave, { merge: true });
+                setIsEditing(false);
+                alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+            };
+
+            return (
+                <div className="absolute inset-0 p-4 md:p-8 overflow-y-auto custom-scrollbar bg-slate-50">
+                    <div className="max-w-6xl mx-auto">
+                        <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <div>
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900"><i className="fa-solid fa-database text-blue-600 mr-2"></i> จัดการฐานข้อมูลส่วนกลาง (Master Data)</h2>
+                                <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงานทั้งหมด (ไม่มีตั้งค่า Line ในนี้แล้วเพื่อความปลอดภัย)</p>
+                            </div>
+                            <div className="flex gap-2">
+                                {!isEditing ? (
+                                    <button onClick={() => setIsEditing(true)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-colors text-sm flex items-center">
+                                        <i className="fa-solid fa-pen-to-square mr-2"></i> แก้ไขข้อมูล
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button onClick={() => { setIsEditing(false); setTempData(masterData); }} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-semibold transition-colors text-sm">
+                                            ยกเลิก
+                                        </button>
+                                        <button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition-colors text-sm flex items-center">
+                                            <i className="fa-solid fa-check mr-2"></i> ยืนยันการบันทึก
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </header>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* Left/Top Column: Teams */}
+                            <div className="lg:col-span-1 space-y-6">
+                                {/* All Teams Database */}
+                                <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
+                                    <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-indigo-500 mr-2"></i> ฐานข้อมูลทีมงานทั้งหมด</h3>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500">รายชื่อทีม (คั่นด้วยลูกน้ำ ,)</label>
+                                        <textarea 
+                                            disabled={!isEditing}
+                                            value={Array.isArray(tempData.teams) ? tempData.teams.join(', ') : tempData.teams} 
+                                            onChange={e => setTempData({...tempData, teams: e.target.value})} 
+                                            rows="8" 
+                                            className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm disabled:bg-slate-100 disabled:text-slate-500" 
+                                            placeholder="BA, TAS, ATG, ..."></textarea>
+                                        <p className="text-[10px] text-slate-400 mt-1">ทีมงานในส่วนนี้จะถูกนำไปเป็นตัวเลือกในหน้า Assign Job</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right/Bottom Column: Zones (Compact Grid) */}
+                            <div className="lg:col-span-2">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-slate-800"><i className="fa-solid fa-map-location-dot text-amber-500 mr-2"></i> ฐานข้อมูลโซนพื้นที่ (Zones)</h3>
+                                    {isEditing && (
+                                        <button onClick={addZone} className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-bold transition-colors">
+                                            <i className="fa-solid fa-plus"></i> เพิ่มโซน
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {/* Compact Grid for Zones */}
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                    {tempData.zones.map((zone, idx) => (
+                                        <div key={zone.id} className={`p-4 rounded-xl border shadow-sm relative transition-colors ${isEditing ? 'bg-white border-amber-200 hover:shadow-md' : 'bg-slate-100/50 border-slate-200'}`}>
+                                            {isEditing && (
+                                                <button onClick={() => delZone(idx)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-trash"></i></button>
+                                            )}
+                                            <div className="space-y-3">
+                                                <div className="pr-6">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ชื่อโซน</label>
+                                                    <input 
+                                                        type="text" 
+                                                        disabled={!isEditing}
+                                                        value={zone.name} 
+                                                        onChange={e => handleSaveZone(idx, 'name', e.target.value)} 
+                                                        className="w-full mt-0.5 px-2 py-1 border-b border-slate-200 bg-transparent outline-none focus:border-amber-500 text-sm font-bold text-slate-800 disabled:text-slate-600" 
+                                                        placeholder="ชื่อโซน..." 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">เขต/อำเภอ (คั่นด้วยลูกน้ำ ,)</label>
+                                                    <textarea 
+                                                        disabled={!isEditing}
+                                                        value={zone.districts} 
+                                                        onChange={e => handleSaveZone(idx, 'districts', e.target.value)} 
+                                                        rows="2" 
+                                                        className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0" 
+                                                        placeholder="ระบุเขต..."></textarea>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ทีมที่รับผิดชอบ (เรียงตามคิว)</label>
+                                                    <textarea 
+                                                        disabled={!isEditing}
+                                                        value={zone.teams} 
+                                                        onChange={e => handleSaveZone(idx, 'teams', e.target.value)} 
+                                                        rows="1" 
+                                                        className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0 font-semibold text-indigo-700" 
+                                                        placeholder="ทีม A, ทีม B..."></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // -------------------------------------------------------------
+        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY ---
+        // -------------------------------------------------------------
+        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL }) => {
+            
+            const getInitialFormState = () => {
+                const now = new Date();
+                return {
+                    date: `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+                    cid: '', districtSearch: '', zoneId: '', team: '', customerName: '', address: '', phone: '', cancelDate: '', details: '', nextTeam: ''
+                };
+            };
+
+            const [form, setForm] = useState(getInitialFormState());
+            const [equipments, setEquipments] = useState([{ name: '', serial: '' }]);
+            const [isSending, setIsSending] = useState(false);
+
+            const allDistrictsMap = useMemo(() => {
+                let map = [];
+                masterData.zones.forEach(z => {
+                    const dists = z.districts.split(',').map(d => d.trim()).filter(Boolean);
+                    dists.forEach(d => map.push({ name: d, zoneId: z.id, zoneName: z.name }));
+                });
+                return map.sort((a,b) => a.name.localeCompare(b.name, 'th'));
+            }, [masterData.zones]);
+
+            const handleDistrictInput = (e) => {
+                const val = e.target.value;
+                setForm(prev => ({...prev, districtSearch: val}));
+                const found = allDistrictsMap.find(d => d.name === val);
+                if (found) {
+                    handleZoneSelect(found.zoneId);
+                }
+            };
+
+            const handleZoneSelect = (zoneId) => {
+                const zone = masterData.zones.find(z => z.id === zoneId);
+                if (zone) {
+                    const tArr = zone.teams.split(',').map(t => t.trim()).filter(Boolean);
+                    let currentQ = queueState[zone.id] || 0;
+                    let t1 = tArr.length > 0 ? tArr[currentQ % tArr.length] : '';
+                    let t2 = tArr.length > 0 ? tArr[(currentQ + 1) % tArr.length] : '';
+                    setForm(prev => ({ ...prev, zoneId: zoneId, team: t1, nextTeam: t2 }));
+                } else {
+                    setForm(prev => ({ ...prev, zoneId: '', team: '', nextTeam: '' }));
+                }
+            };
+
+            const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
+            const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
+
+            const generateMessage = () => {
+                return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
+---------------------------
+ 📅 วันที่/เวลาแจ้ง: ${form.date}
+ CIDs: ${form.cid || '-'}
+ ผู้รับเหมา: ${form.team || '-'}
+ บริษัทลูกค้า: ${form.customerName || '-'}
+ ที่อยู่: ${form.address || '-'}
+ เบอร์ติดต่อ: ${form.phone || '-'}
+ วันที่ยกเลิกใช้งาน: ${form.cancelDate || '-'}
+
+ รายละเอียดงาน: ${form.details || '-'}
+
+รายการอุปกรณ์
+${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${e.serial || '-'}`).join('\n')}
+
+ ⏭️ ผู้รับเหมาลำดับถัดไป: ${form.nextTeam || '-'}`;
+            };
+
+            const submitJob = async () => {
+                if (!form.zoneId && !form.team) { alert('กรุณาเลือกโซนพื้นที่รับผิดชอบ หรือระบุทีมงาน'); return; }
+                setIsSending(true);
+                
+                try {
+                    // 1. สร้าง ID จำลอง เพื่อให้เว็บแสดงผลทันทีแบบไม่ต้องรอ
+                    const newTaskId = `task_assign_${Date.now()}`;
+                    const newTaskData = {
+                        "วันที่แจ้ง Subcontract": form.date,
+                        "CID Customer": form.cid,
+                        "ทีมงาน": form.team,
+                        "บริษัทลูกค้า": form.customerName,
+                        "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
+                        "วันที่ยกเลิกใช้งาน": form.cancelDate,
+                        "สถานะ": "รอเข้าเก็บ",
+                        "_rowIndex": 999999 // ใส่ค่าให้มันไปอยู่ล่างสุดเสมอ
+                    };
+                    const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
+                    newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
+
+                    // เขียนลง Firebase ทันที เพื่อให้แสดงผลในตาราง 
+                    await collectionRef.doc(newTaskId).set(newTaskData);
+
+                    // อัปเดตคิวใน Firebase
+                    if (form.zoneId) {
+                        const zone = masterData.zones.find(z => z.id === form.zoneId);
+                        if (zone) {
+                            const tArr = zone.teams.split(',').map(t => t.trim()).filter(Boolean);
+                            let currentQ = queueState[form.zoneId] || 0;
+                            let newQ = (currentQ + 1) % tArr.length;
+                            
+                            const manualNextIndex = tArr.findIndex(t => t === form.nextTeam);
+                            if (manualNextIndex !== -1) newQ = manualNextIndex;
+                            
+                            masterDataRef.set({ queue: { ...queueState, [form.zoneId]: newQ } }, { merge: true });
+                            setQueueState({ ...queueState, [form.zoneId]: newQ });
+                        }
+                    }
+
+                    const msg = generateMessage();
+                    alert('✅ สั่งงานเรียบร้อย (ระบบกำลังจัดการส่ง LINE และลง Sheet ให้อัตโนมัติ)');
+                    
+                    // รีเซ็ตฟอร์มทั้งหมด 100% ให้พร้อมใช้งานใหม่ทันที
+                    setForm(getInitialFormState());
+                    setEquipments([{ name: '', serial: '' }]);
+
+                    if (GAS_WEB_APP_URL) {
+                        const payloadData = JSON.stringify({ 
+                            action: 'sendLineNotify', 
+                            message: msg,
+                            taskData: newTaskData,
+                            tempTaskId: newTaskId 
+                        });
+                        
+                        // Background Process ส่งข้อมูลให้ Sheet จัดการเงียบๆ
+                        fetch(GAS_WEB_APP_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: payloadData
+                        }).catch(e => console.error("Background sync to Sheet failed:", e));
+                    }
+                } catch (e) {
+                    console.error("Failed to send/save:", e);
+                    alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์');
+                }
+                setIsSending(false);
+            };
+
+            const handleCopy = () => {
+                const text = generateMessage();
+                try {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text; textArea.style.position = "fixed"; textArea.style.left = "-999999px";
+                    document.body.appendChild(textArea); textArea.focus(); textArea.select();
+                    document.execCommand('copy'); textArea.remove(); alert('คัดลอกข้อความแล้ว!');
+                } catch (err) { alert('ไม่สามารถคัดลอกได้ กรุณาคัดลอกด้วยตัวเอง'); }
+            };
+
+            return (
+                <div className="absolute inset-0 p-4 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-6">
+                    <div className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
+                                <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอ (เลือกระบุอัตโนมัติ)</label>
+                                <input 
+                                    type="text" 
+                                    list="districts-list" 
+                                    placeholder="เช่น เขตพระนคร" 
+                                    value={form.districtSearch} 
+                                    onChange={handleDistrictInput} 
+                                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm outline-none focus:ring-2 focus:ring-amber-500" 
+                                />
+                                <datalist id="districts-list">
+                                    {allDistrictsMap.map((d, i) => <option key={i} value={d.name} />)}
+                                </datalist>
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase text-amber-600">โซนพื้นที่รับผิดชอบ (ดึงอัตโนมัติจากเขต หรือเลือกเองได้)</label>
+                                <select value={form.zoneId} onChange={(e)=>handleZoneSelect(e.target.value)} className="w-full mt-1 px-3 py-1.5 border border-amber-300 rounded-md text-sm font-bold text-amber-800 bg-amber-50 outline-none focus:ring-2 focus:ring-amber-500">
+                                    <option value="">-- เลือกโซนพื้นที่ --</option>
+                                    {masterData.zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase text-blue-600">ผู้รับเหมา (คิวปัจจุบัน)</label>
+                                <select value={form.team} onChange={e=>setForm({...form, team: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-blue-300 rounded-md text-sm font-bold text-blue-700 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                                    <option value="">- เลือกระบุทีมเอง -</option>
+                                    <optgroup label="ทีมในโซนพื้นที่ (เรียงตามคิว)">
+                                      {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`z-${t}`} value={t.trim()}>{t.trim()}</option>)}
+                                    </optgroup>
+                                    <optgroup label="รายชื่อทีมทั้งหมด (ในฐานข้อมูล)">
+                                      {masterData.teams.map(t => <option key={`a-${t}`} value={t}>{t}</option>)}
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป (ระบุเองได้)</label>
+                                <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm font-bold text-slate-600 bg-white focus:ring-2 focus:ring-slate-500 outline-none">
+                                    <option value="">- เลือกระบุทีมเอง -</option>
+                                    <optgroup label="ทีมในโซนพื้นที่">
+                                      {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`nz-${t}`} value={t.trim()}>{t.trim()}</option>)}
+                                    </optgroup>
+                                    <optgroup label="รายชื่อทีมทั้งหมด">
+                                      {masterData.teams.map(t => <option key={`na-${t}`} value={t}>{t}</option>)}
+                                    </optgroup>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">CIDs</label>
+                                <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า</label>
+                                <input type="text" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">ที่อยู่</label>
+                                <input type="text" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">เบอร์ติดต่อ</label>
+                                <input type="text" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่ยกเลิกใช้งาน</label>
+                                <input type="text" placeholder="ระบุวันที่/ข้อความ" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">รายละเอียดงาน</label>
+                                <textarea rows="2" value={form.details} onChange={e=>setForm({...form, details: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm"></textarea>
+                            </div>
+                        </div>
+
+                        <div className="mb-4">
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์</label>
+                                <button onClick={addEquip} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
+                            </div>
+                            <div className="space-y-2">
+                                {equipments.map((eq, i) => (
+                                    <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                        <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
+                                        <input type="text" placeholder="Serial Number" value={eq.serial} onChange={e=>{let ne=[...equipments]; ne[i].serial=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
+                                        {equipments.length > 1 && <button onClick={()=>rmEquip(i)} className="text-red-400 hover:text-red-600 px-2 transition-colors"><i className="fa-solid fa-circle-xmark text-lg"></i></button>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right: Preview & Send */}
+                    <div className="w-full lg:w-[400px] flex flex-col">
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                            <div className="bg-slate-800 text-white p-3 font-bold text-center flex justify-between items-center">
+                                <span><i className="fa-brands fa-line text-green-400 mr-1 text-lg"></i> Line Preview</span>
+                            </div>
+                            <div className="flex-1 line-preview p-4 overflow-y-auto custom-scrollbar flex flex-col">
+                                <div className="line-bubble p-3 text-sm text-slate-800 whitespace-pre-wrap font-sans">
+                                    {generateMessage()}
+                                </div>
+                            </div>
+                            <div className="p-4 bg-white border-t border-slate-200">
+                                <button onClick={submitJob} disabled={isSending} className={`w-full ${isSending ? 'bg-slate-400' : 'bg-[#06C755] hover:bg-[#05b34c]'} text-white font-bold py-3 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2`}>
+                                    <i className="fa-solid fa-paper-plane"></i> ยืนยันการจ่ายงาน & ส่งข้อความ
+                                </button>
+                                <button onClick={handleCopy} className="w-full mt-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-sm transition-colors">
+                                    <i className="fa-regular fa-copy"></i> คัดลอกข้อความ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- Firebase Setup ---
         const firebaseConfig = {
             apiKey: "AIzaSyBzHPhjjxRqcfno1QUkKUZddOPP_pota-Y",
@@ -291,6 +712,7 @@
             teams: ["BA", "TAS", "ATG", "NPY", "JEKLINK", "TP", "JJ&A", "SYMC"]
         };
 
+        // --- THE MAIN APP COMPONENT ---
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
           const [tasks, setTasks] = useState([]);
@@ -307,7 +729,6 @@
           const [dashboardView, setDashboardView] = useState('overview'); 
           const [tasksSubTab, setTasksSubTab] = useState('subcontract');
 
-          // Filters
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
           const [selectedStatuses, setSelectedStatuses] = useState([]);
@@ -319,24 +740,23 @@
           const [tableFilterOverdue, setTableFilterOverdue] = useState('All');
           const [searchTerm, setSearchTerm] = useState('');
 
-          // Table Configs
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
           const [colWidths, setColWidths] = useState({}); 
           const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
           const [editingCell, setEditingCell] = useState(null);
 
-          // History & Master Data
           const [historyLogs, setHistoryLogs] = useState([]);
           const [showHistoryModal, setShowHistoryModal] = useState(false);
           const [masterData, setMasterData] = useState(defaultMasterData);
           const [queueState, setQueueState] = useState({});
+          
+          const timeoutRef = useRef(null);
 
           useEffect(() => {
               setIsLoading(true); setFirebaseError(null);
               const savedCols = localStorage.getItem('equip_tracker_columns');
               if (savedCols) setColumns(JSON.parse(savedCols));
 
-              // Listen to Master Data
               const unsubMaster = masterDataRef.onSnapshot(doc => {
                   if (doc.exists && doc.data().zones) {
                       const data = doc.data();
@@ -350,17 +770,29 @@
                   }
               });
 
-              // Listen to Tasks
               const unsubscribe = collectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) {
                       setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks'"); setIsLoading(false); return;
                   }
+                  
                   let allCols = new Set(columns);
                   let metadataCols = null;
-                  const uniqueTasksMap = new Map();
+                  const newTasks = [];
+                  const now = Date.now();
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
+                      
+                      // ฆ่าข้อมูลผี: ถ้าเป็นข้อมูลจำลองที่สร้างจากเว็บ และมีอายุเกิน 15 วินาที ให้สั่งลบทิ้งเลย
+                      if (doc.id.startsWith('task_assign_')) {
+                          const timestampStr = doc.id.replace('task_assign_', '');
+                          const timestamp = parseInt(timestampStr);
+                          if (!isNaN(timestamp) && (now - timestamp > 15000)) {
+                              collectionRef.doc(doc.id).delete().catch(()=>{});
+                              return; 
+                          }
+                      }
+
                       const data = doc.data();
                       const cleanData = { id: doc.id };
                       Object.keys(data).forEach(key => {
@@ -370,31 +802,48 @@
                               allCols.add(key);
                           }
                       });
-                      cleanData._rowIndex = data['_rowIndex']?.integerValue ?? data['_rowIndex'] ?? 0;
-                      const mapKey = cleanData._rowIndex > 0 ? `row_${cleanData._rowIndex}` : doc.id;
-                      uniqueTasksMap.set(mapKey, cleanData);
+                      
+                      let rIndex = data['_rowIndex']?.integerValue;
+                      if (rIndex == null) rIndex = data['_rowIndex'];
+                      if (rIndex == null) {
+                          const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', ''));
+                          rIndex = isNaN(parsed) ? 999999 : parsed; // ให้ข้อมูลจำลองอยู่ล่างสุดเสมอ
+                      }
+                      cleanData._rowIndex = parseInt(rIndex) || 0;
+                      
+                      newTasks.push(cleanData);
                   });
 
-                  const newTasks = Array.from(uniqueTasksMap.values()).filter(task => {
-                      const hasVitalData = Object.keys(task).some(k => 
+                  // เอาตัวกรองข้อมูลซ้ำออกทั้งหมด: ก๊อปปี้ข้อมูลวาง ก็จะโชว์ข้อมูล 100% ไม่ถูกซ่อนอีกต่อไป
+                  const validTasks = newTasks.filter(task => {
+                      return Object.keys(task).some(k => 
                           k !== 'id' && k !== '_rowIndex' && 
                           !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
                           String(task[k]).trim() !== ''
                       );
-                      return hasVitalData; 
                   });
 
-                  newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
-                  setTasks(newTasks); setFirebaseError(null); 
+                  validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-                  if (metadataCols && Array.isArray(metadataCols)) {
-                      setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
-                  } else if (allCols.size > columns.length) {
-                      const colsArray = Array.from(allCols);
-                      setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
-                  }
-                  localStorage.setItem('equip_tracker_tasks', JSON.stringify(newTasks));
-                  setIsLoading(false);
+                  // ระบบหน่วงเวลาเฉพาะกรณีมีการอัปเดตชุดใหญ่ เพื่อป้องกันหน้าจอกระตุกและแถวหายชั่วคราว
+                  const isBatchUpdate = snapshot.docChanges().length > 2;
+                  const delayTime = isBatchUpdate ? 1500 : 0; 
+                  
+                  clearTimeout(timeoutRef.current);
+                  timeoutRef.current = setTimeout(() => {
+                      setTasks(validTasks); 
+                      setFirebaseError(null); 
+                      
+                      if (metadataCols && Array.isArray(metadataCols)) {
+                          setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
+                      } else if (allCols.size > columns.length) {
+                          const colsArray = Array.from(allCols);
+                          setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
+                      }
+                      localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
+                      setIsLoading(false);
+                  }, delayTime);
+                  
               }, (error) => {
                   console.error("Firestore Error:", error); setFirebaseError(`Firebase Error: ${error.message}`);
                   const savedTasks = localStorage.getItem('equip_tracker_tasks');
@@ -405,7 +854,6 @@
               return () => { unsubscribe(); unsubMaster(); };
           }, []);
 
-          // Auto Column Mapping
           useEffect(() => {
               if (columns.length > 0) {
                   const findCol = (keywords) => columns.find(c => keywords.some(kw => c?.toLowerCase().includes(kw.toLowerCase()))) || '';
@@ -431,7 +879,6 @@
               }
           }, [columns]);
 
-          // Fetch History Log when modal opens
           useEffect(() => {
               if (showHistoryModal) {
                   historyRef.orderBy('updatedAt', 'desc').limit(50).get().then(snap => {
@@ -464,7 +911,7 @@
               if (!teamName || String(teamName).trim() === '') return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' };
               const str = String(teamName).trim();
               if (specificTeamColors[str.toLowerCase()]) return specificTeamColors[str.toLowerCase()];
-              let hash = 0; for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+              let hash = 0; for (let i = 0; i < str.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
@@ -481,7 +928,6 @@
                   await historyRef.add({ taskId: id, company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
                   if (GAS_WEB_APP_URL) {
                       const rowNum = id.replace('task_', ''); 
-                      // ใช้วิธีส่งแบบ text/plain แทน x-www-form-urlencoded
                       const payloadData = JSON.stringify({ row: rowNum, field: field, value: value });
                       fetch(GAS_WEB_APP_URL, {
                           method: 'POST',
@@ -589,7 +1035,6 @@
           };
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : statusCounts[b] - statusCounts[a]; });
           
-          // Charts Data
           const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[statusCol]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
           const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : chartStatusCounts[b] - chartStatusCounts[a]; });
           const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
@@ -625,7 +1070,6 @@
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
-          // --- Table Logic ---
           let tableTasks = [...tasks]; 
           if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
           if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
@@ -645,7 +1089,6 @@
           if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
           const finalTableTasks = tasksSubTab === 'subcontract' ? tableTasks : [];
 
-          // --- Calendar Logic ---
           const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
           const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
           const navigateCalendar = (dir) => { const nd = new Date(currentDate); if (calendarView === 'month') nd.setMonth(nd.getMonth() + dir); else if (calendarView === 'week') nd.setDate(nd.getDate() + (dir * 7)); else nd.setDate(nd.getDate() + dir); setCurrentDate(nd); };
@@ -678,422 +1121,6 @@
               <i className={`${iconClass} text-lg w-6 text-center ${activeTab === id ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">{label}</span>
             </button>
           );
-
-          // -------------------------------------------------------------
-          // --- COMPONENT: MASTER DATA MANAGEMENT ---
-          // -------------------------------------------------------------
-          const MasterDataTab = () => {
-              const [isEditing, setIsEditing] = useState(false);
-              const [tempData, setTempData] = useState(masterData);
-
-              useEffect(() => { setTempData(masterData); }, [masterData]);
-
-              const handleSaveZone = (index, field, val) => {
-                  const newZones = [...tempData.zones];
-                  newZones[index][field] = val;
-                  setTempData({ ...tempData, zones: newZones });
-              };
-              const addZone = () => {
-                  const newZones = [...tempData.zones, { id: `zone_${Date.now()}`, name: `โซนใหม่ ${tempData.zones.length + 1}`, districts: "", teams: "" }];
-                  setTempData({ ...tempData, zones: newZones });
-              };
-              const delZone = (index) => {
-                  if(confirm('ยืนยันลบโซนนี้?')) {
-                      const newZones = tempData.zones.filter((_, i) => i !== index);
-                      setTempData({ ...tempData, zones: newZones });
-                  }
-              };
-
-              const handleSave = () => {
-                  const newTeamsArr = typeof tempData.teams === 'string' 
-                      ? tempData.teams.split(',').map(t=>t.trim()).filter(Boolean) 
-                      : tempData.teams;
-
-                  const dataToSave = {
-                      zones: tempData.zones,
-                      teams: newTeamsArr
-                  };
-
-                  masterDataRef.set(dataToSave, { merge: true });
-                  setIsEditing(false);
-                  alert('บันทึกข้อมูลเรียบร้อยแล้ว');
-              };
-
-              return (
-                  <div className="absolute inset-0 p-4 md:p-8 overflow-y-auto custom-scrollbar bg-slate-50">
-                      <div className="max-w-6xl mx-auto">
-                          <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                              <div>
-                                  <h2 className="text-xl md:text-2xl font-bold text-slate-900"><i className="fa-solid fa-database text-blue-600 mr-2"></i> จัดการฐานข้อมูลส่วนกลาง (Master Data)</h2>
-                                  <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงานทั้งหมด (ไม่มีตั้งค่า Line ในนี้แล้วเพื่อความปลอดภัย)</p>
-                              </div>
-                              <div className="flex gap-2">
-                                  {!isEditing ? (
-                                      <button onClick={() => setIsEditing(true)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-semibold shadow-sm transition-colors text-sm flex items-center">
-                                          <i className="fa-solid fa-pen-to-square mr-2"></i> แก้ไขข้อมูล
-                                      </button>
-                                  ) : (
-                                      <>
-                                          <button onClick={() => { setIsEditing(false); setTempData(masterData); }} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-semibold transition-colors text-sm">
-                                              ยกเลิก
-                                          </button>
-                                          <button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition-colors text-sm flex items-center">
-                                              <i className="fa-solid fa-check mr-2"></i> ยืนยันการบันทึก
-                                          </button>
-                                      </>
-                                  )}
-                              </div>
-                          </header>
-
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                              {/* Left/Top Column: Teams */}
-                              <div className="lg:col-span-1 space-y-6">
-                                  {/* All Teams Database */}
-                                  <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
-                                      <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-indigo-500 mr-2"></i> ฐานข้อมูลทีมงานทั้งหมด</h3>
-                                      <div>
-                                          <label className="text-xs font-bold text-slate-500">รายชื่อทีม (คั่นด้วยลูกน้ำ ,)</label>
-                                          <textarea 
-                                              disabled={!isEditing}
-                                              value={Array.isArray(tempData.teams) ? tempData.teams.join(', ') : tempData.teams} 
-                                              onChange={e => setTempData({...tempData, teams: e.target.value})} 
-                                              rows="8" 
-                                              className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm disabled:bg-slate-100 disabled:text-slate-500" 
-                                              placeholder="BA, TAS, ATG, ..."></textarea>
-                                          <p className="text-[10px] text-slate-400 mt-1">ทีมงานในส่วนนี้จะถูกนำไปเป็นตัวเลือกในหน้า Assign Job</p>
-                                      </div>
-                                  </div>
-                              </div>
-
-                              {/* Right/Bottom Column: Zones (Compact Grid) */}
-                              <div className="lg:col-span-2">
-                                  <div className="flex justify-between items-center mb-4">
-                                      <h3 className="font-bold text-slate-800"><i className="fa-solid fa-map-location-dot text-amber-500 mr-2"></i> ฐานข้อมูลโซนพื้นที่ (Zones)</h3>
-                                      {isEditing && (
-                                          <button onClick={addZone} className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-1.5 rounded-lg font-bold transition-colors">
-                                              <i className="fa-solid fa-plus"></i> เพิ่มโซน
-                                          </button>
-                                      )}
-                                  </div>
-                                  
-                                  {/* Compact Grid for Zones */}
-                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                      {tempData.zones.map((zone, idx) => (
-                                          <div key={zone.id} className={`p-4 rounded-xl border shadow-sm relative transition-colors ${isEditing ? 'bg-white border-amber-200 hover:shadow-md' : 'bg-slate-100/50 border-slate-200'}`}>
-                                              {isEditing && (
-                                                  <button onClick={() => delZone(idx)} className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-trash"></i></button>
-                                              )}
-                                              <div className="space-y-3">
-                                                  <div className="pr-6">
-                                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ชื่อโซน</label>
-                                                      <input 
-                                                          type="text" 
-                                                          disabled={!isEditing}
-                                                          value={zone.name} 
-                                                          onChange={e => handleSaveZone(idx, 'name', e.target.value)} 
-                                                          className="w-full mt-0.5 px-2 py-1 border-b border-slate-200 bg-transparent outline-none focus:border-amber-500 text-sm font-bold text-slate-800 disabled:text-slate-600" 
-                                                          placeholder="ชื่อโซน..." 
-                                                      />
-                                                  </div>
-                                                  <div>
-                                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">เขต/อำเภอ (คั่นด้วยลูกน้ำ ,)</label>
-                                                      <textarea 
-                                                          disabled={!isEditing}
-                                                          value={zone.districts} 
-                                                          onChange={e => handleSaveZone(idx, 'districts', e.target.value)} 
-                                                          rows="2" 
-                                                          className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0" 
-                                                          placeholder="ระบุเขต..."></textarea>
-                                                  </div>
-                                                  <div>
-                                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ทีมที่รับผิดชอบ (เรียงตามคิว)</label>
-                                                      <textarea 
-                                                          disabled={!isEditing}
-                                                          value={zone.teams} 
-                                                          onChange={e => handleSaveZone(idx, 'teams', e.target.value)} 
-                                                          rows="1" 
-                                                          className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0 font-semibold text-indigo-700" 
-                                                          placeholder="ทีม A, ทีม B..."></textarea>
-                                                  </div>
-                                              </div>
-                                          </div>
-                                      ))}
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-              );
-          };
-
-          // -------------------------------------------------------------
-          // --- COMPONENT: ASSIGN JOB & LINE NOTIFY ---
-          // -------------------------------------------------------------
-          const AssignJobTab = () => {
-              const [form, setForm] = useState({
-                  date: `${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()} ${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
-                  cid: '', districtSearch: '', zoneId: '', team: '', customerName: '', address: '', phone: '', cancelDate: '', details: '', nextTeam: ''
-              });
-              const [equipments, setEquipments] = useState([{ name: '', serial: '' }]);
-              const [isSending, setIsSending] = useState(false);
-
-              const allDistrictsMap = useMemo(() => {
-                  let map = [];
-                  masterData.zones.forEach(z => {
-                      const dists = z.districts.split(',').map(d => d.trim()).filter(Boolean);
-                      dists.forEach(d => map.push({ name: d, zoneId: z.id, zoneName: z.name }));
-                  });
-                  return map.sort((a,b) => a.name.localeCompare(b.name, 'th'));
-              }, [masterData.zones]);
-
-              const handleDistrictInput = (e) => {
-                  const val = e.target.value;
-                  setForm(prev => ({...prev, districtSearch: val}));
-                  const found = allDistrictsMap.find(d => d.name === val);
-                  if (found) {
-                      handleZoneSelect(found.zoneId);
-                  }
-              };
-
-              const handleZoneSelect = (zoneId) => {
-                  const zone = masterData.zones.find(z => z.id === zoneId);
-                  if (zone) {
-                      const tArr = zone.teams.split(',').map(t => t.trim()).filter(Boolean);
-                      let currentQ = queueState[zone.id] || 0;
-                      let t1 = tArr.length > 0 ? tArr[currentQ % tArr.length] : '';
-                      let t2 = tArr.length > 0 ? tArr[(currentQ + 1) % tArr.length] : '';
-                      setForm(prev => ({ ...prev, zoneId: zoneId, team: t1, nextTeam: t2 }));
-                  } else {
-                      setForm(prev => ({ ...prev, zoneId: '', team: '', nextTeam: '' }));
-                  }
-              };
-
-              const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
-              const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
-
-              const generateMessage = () => {
-                  return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
----------------------------
- 📅 วันที่/เวลาแจ้ง: ${form.date}
- CIDs: ${form.cid || '-'}
- ผู้รับเหมา: ${form.team || '-'}
- บริษัทลูกค้า: ${form.customerName || '-'}
- ที่อยู่: ${form.address || '-'}
- เบอร์ติดต่อ: ${form.phone || '-'}
- วันที่ยกเลิกใช้งาน: ${form.cancelDate || '-'}
-
- รายละเอียดงาน: ${form.details || '-'}
-
-รายการอุปกรณ์
-${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${e.serial || '-'}`).join('\n')}
-
- ⏭️ ผู้รับเหมาลำดับถัดไป: ${form.nextTeam || '-'}`;
-              };
-
-              const submitJob = async () => {
-                  if (!form.zoneId && !form.team) { alert('กรุณาเลือกโซนพื้นที่รับผิดชอบ หรือระบุทีมงาน'); return; }
-                  setIsSending(true);
-                  
-                  try {
-                      // 1. Update Queue Index in Firebase (only if zone is selected)
-                      if (form.zoneId) {
-                          const zone = masterData.zones.find(z => z.id === form.zoneId);
-                          if (zone) {
-                              const tArr = zone.teams.split(',').map(t => t.trim()).filter(Boolean);
-                              let currentQ = queueState[form.zoneId] || 0;
-                              let newQ = (currentQ + 1) % tArr.length;
-                              
-                              const manualNextIndex = tArr.findIndex(t => t === form.nextTeam);
-                              if (manualNextIndex !== -1) {
-                                  newQ = manualNextIndex;
-                              }
-                              
-                              masterDataRef.set({ queue: { ...queueState, [form.zoneId]: newQ } }, { merge: true });
-                              setQueueState({ ...queueState, [form.zoneId]: newQ });
-                          }
-                      }
-
-                      // 2. เตรียมข้อมูลสำหรับส่งเข้า Sheet
-                      const newTaskData = {
-                          "วันที่แจ้ง Subcontract": form.date,
-                          "CID Customer": form.cid,
-                          "ทีมงาน": form.team,
-                          "บริษัทลูกค้า": form.customerName,
-                          "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
-                          "วันที่ยกเลิกใช้งาน": form.cancelDate,
-                          "สถานะ": "รอเข้าเก็บ"
-                      };
-                      
-                      const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
-                      newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
-
-                      // 3. Send Line Message via GAS & Append to Sheet
-                      const msg = generateMessage();
-                      if (GAS_WEB_APP_URL) {
-                          const payloadData = JSON.stringify({ 
-                              action: 'sendLineNotify', 
-                              message: msg,
-                              taskData: newTaskData
-                          });
-                          // ใช้วิธีส่งแบบ text/plain แทน x-www-form-urlencoded
-                          await fetch(GAS_WEB_APP_URL, {
-                              method: 'POST',
-                              mode: 'no-cors',
-                              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                              body: payloadData
-                          });
-                          alert('✅ บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว!');
-                      } else {
-                          alert('ไม่ได้ตั้งค่า URL ของ Google Apps Script');
-                      }
-
-                      setForm(prev => ({...prev, cid: '', customerName: '', address: '', phone: '', details: '', cancelDate: ''}));
-                      setEquipments([{ name: '', serial: '' }]);
-
-                  } catch (e) {
-                      console.error("Failed to send/save:", e);
-                      alert('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์');
-                  }
-                  setIsSending(false);
-              };
-
-              const handleCopy = () => {
-                  const text = generateMessage();
-                  try {
-                      const textArea = document.createElement("textarea");
-                      textArea.value = text; textArea.style.position = "fixed"; textArea.style.left = "-999999px";
-                      document.body.appendChild(textArea); textArea.focus(); textArea.select();
-                      document.execCommand('copy'); textArea.remove(); alert('คัดลอกข้อความแล้ว!');
-                  } catch (err) { alert('ไม่สามารถคัดลอกได้ กรุณาคัดลอกด้วยตัวเอง'); }
-              };
-
-              return (
-                  <div className="absolute inset-0 p-4 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-6">
-                      
-                      <div className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                          <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
-                                  <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอ (เลือกระบุอัตโนมัติ)</label>
-                                  <input 
-                                      type="text" 
-                                      list="districts-list" 
-                                      placeholder="เช่น เขตพระนคร" 
-                                      value={form.districtSearch} 
-                                      onChange={handleDistrictInput} 
-                                      className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm outline-none focus:ring-2 focus:ring-amber-500" 
-                                  />
-                                  <datalist id="districts-list">
-                                      {allDistrictsMap.map((d, i) => <option key={i} value={d.name} />)}
-                                  </datalist>
-                              </div>
-                              <div className="md:col-span-2">
-                                  <label className="text-xs font-bold text-slate-500 uppercase text-amber-600">โซนพื้นที่รับผิดชอบ (ดึงอัตโนมัติจากเขต หรือเลือกเองได้)</label>
-                                  <select value={form.zoneId} onChange={(e)=>handleZoneSelect(e.target.value)} className="w-full mt-1 px-3 py-1.5 border border-amber-300 rounded-md text-sm font-bold text-amber-800 bg-amber-50 outline-none focus:ring-2 focus:ring-amber-500">
-                                      <option value="">-- เลือกโซนพื้นที่ --</option>
-                                      {masterData.zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
-                                  </select>
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase text-blue-600">ผู้รับเหมา (คิวปัจจุบัน)</label>
-                                  <select value={form.team} onChange={e=>setForm({...form, team: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-blue-300 rounded-md text-sm font-bold text-blue-700 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                                      <option value="">- เลือกระบุทีมเอง -</option>
-                                      <optgroup label="ทีมในโซนพื้นที่ (เรียงตามคิว)">
-                                        {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`z-${t}`} value={t.trim()}>{t.trim()}</option>)}
-                                      </optgroup>
-                                      <optgroup label="รายชื่อทีมทั้งหมด (ในฐานข้อมูล)">
-                                        {masterData.teams.map(t => <option key={`a-${t}`} value={t}>{t}</option>)}
-                                      </optgroup>
-                                  </select>
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป (ระบุเองได้)</label>
-                                  <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm font-bold text-slate-600 bg-white focus:ring-2 focus:ring-slate-500 outline-none">
-                                      <option value="">- เลือกระบุทีมเอง -</option>
-                                      <optgroup label="ทีมในโซนพื้นที่">
-                                        {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`nz-${t}`} value={t.trim()}>{t.trim()}</option>)}
-                                      </optgroup>
-                                      <optgroup label="รายชื่อทีมทั้งหมด">
-                                        {masterData.teams.map(t => <option key={`na-${t}`} value={t}>{t}</option>)}
-                                      </optgroup>
-                                  </select>
-                              </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">CIDs</label>
-                                  <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า</label>
-                                  <input type="text" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div className="md:col-span-2">
-                                  <label className="text-xs font-bold text-slate-500 uppercase">ที่อยู่</label>
-                                  <input type="text" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">เบอร์ติดต่อ</label>
-                                  <input type="text" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-bold text-slate-500 uppercase">วันที่ยกเลิกใช้งาน</label>
-                                  <input type="text" placeholder="ระบุวันที่/ข้อความ" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                              </div>
-                              <div className="md:col-span-2">
-                                  <label className="text-xs font-bold text-slate-500 uppercase">รายละเอียดงาน</label>
-                                  <textarea rows="2" value={form.details} onChange={e=>setForm({...form, details: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm"></textarea>
-                              </div>
-                          </div>
-
-                          <div className="mb-4">
-                              <div className="flex justify-between items-center mb-2">
-                                  <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์</label>
-                                  <button onClick={addEquip} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
-                              </div>
-                              <div className="space-y-2">
-                                  {equipments.map((eq, i) => (
-                                      <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                          <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
-                                          <input type="text" placeholder="Serial Number" value={eq.serial} onChange={e=>{let ne=[...equipments]; ne[i].serial=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
-                                          {equipments.length > 1 && <button onClick={()=>rmEquip(i)} className="text-red-400 hover:text-red-600 px-2 transition-colors"><i className="fa-solid fa-circle-xmark text-lg"></i></button>}
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
-                      </div>
-
-                      {/* Right: Preview & Send */}
-                      <div className="w-full lg:w-[400px] flex flex-col">
-                          <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                              <div className="bg-slate-800 text-white p-3 font-bold text-center flex justify-between items-center">
-                                  <span><i className="fa-brands fa-line text-green-400 mr-1 text-lg"></i> Line Preview</span>
-                              </div>
-                              <div className="flex-1 line-preview p-4 overflow-y-auto custom-scrollbar flex flex-col">
-                                  <div className="line-bubble p-3 text-sm text-slate-800 whitespace-pre-wrap font-sans">
-                                      {generateMessage()}
-                                  </div>
-                              </div>
-                              <div className="p-4 bg-white border-t border-slate-200">
-                                  <button onClick={submitJob} disabled={isSending} className={`w-full ${isSending ? 'bg-slate-400' : 'bg-[#06C755] hover:bg-[#05b34c]'} text-white font-bold py-3 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2`}>
-                                      {isSending ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-paper-plane"></i>} 
-                                      {isSending ? 'กำลังส่ง/บันทึก...' : 'ยืนยันการจ่ายงาน & ส่งข้อความ'}
-                                  </button>
-                                  <button onClick={handleCopy} className="w-full mt-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-sm transition-colors">
-                                      <i className="fa-regular fa-copy"></i> คัดลอกข้อความ
-                                  </button>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-              );
-          };
 
           return (
             <div className="fixed inset-0 flex w-full bg-slate-50 text-slate-900 overflow-hidden">
@@ -1308,7 +1335,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   </div>
                 )}
 
-                {/* --- 3. หน้าปฏิทิน (RESTORED TO ORIGINAL FULL VIEW) --- */}
+                {/* --- 3. หน้าปฏิทิน --- */}
                 {activeTab === 'calendar' && (
                   <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 animate-in fade-in duration-500 overflow-hidden bg-slate-50 min-h-0">
                     <header className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
@@ -1579,10 +1606,10 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 )}
 
                 {/* --- 4. หน้า MASTER DATA --- */}
-                {activeTab === 'master_data' && <MasterDataTab />}
+                {activeTab === 'master_data' && <MasterDataTab masterData={masterData} masterDataRef={masterDataRef} />}
 
                 {/* --- 5. หน้า ASSIGN JOB --- */}
-                {activeTab === 'assign' && <AssignJobTab />}
+                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} />}
 
               </main>
 
