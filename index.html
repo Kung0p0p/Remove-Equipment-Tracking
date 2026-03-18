@@ -270,7 +270,8 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzcpZK0BfhD2exNd6l-YBuPbHAujn7CHEmHJHb6RuiMhAGm8ZiM3BVq1QNwOXVwAsQo/exec"; 
+        // ⚠️ อย่าลืมอัปเดต URL นี้หลังจาก Deploy ใหม่ทุกครั้ง ⚠️
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -374,16 +375,13 @@
                       uniqueTasksMap.set(mapKey, cleanData);
                   });
 
-                  const contentHashes = new Set();
                   const newTasks = Array.from(uniqueTasksMap.values()).filter(task => {
-                      const hasVitalData = Object.keys(task).some(k => k !== 'id' && k !== '_rowIndex' && !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && String(task[k]).trim() !== '');
-                      if (!hasVitalData) return false;
-                      const normalizedData = {};
-                      Object.keys(task).sort().forEach(k => { if (k !== 'id' && k !== '_rowIndex') normalizedData[k] = String(task[k] || '').trim(); });
-                      const hash = JSON.stringify(normalizedData);
-                      if (contentHashes.has(hash)) return false; 
-                      contentHashes.add(hash);
-                      return true;
+                      const hasVitalData = Object.keys(task).some(k => 
+                          k !== 'id' && k !== '_rowIndex' && 
+                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
+                          String(task[k]).trim() !== ''
+                      );
+                      return hasVitalData; 
                   });
 
                   newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
@@ -483,7 +481,14 @@
                   await historyRef.add({ taskId: id, company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
                   if (GAS_WEB_APP_URL) {
                       const rowNum = id.replace('task_', ''); 
-                      fetch(GAS_WEB_APP_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ row: rowNum, field: field, value: value }) }).catch(e => console.error("Sync to Sheet failed:", e));
+                      // ใช้วิธีส่งแบบ text/plain แทน x-www-form-urlencoded
+                      const payloadData = JSON.stringify({ row: rowNum, field: field, value: value });
+                      fetch(GAS_WEB_APP_URL, {
+                          method: 'POST',
+                          mode: 'no-cors',
+                          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                          body: payloadData
+                      }).catch(e => console.error("Sync to Sheet failed:", e));
                   }
               } catch (e) {
                   console.error("Error updating document: ", e); setTasks(previousTasks); alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
@@ -898,7 +903,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                               let currentQ = queueState[form.zoneId] || 0;
                               let newQ = (currentQ + 1) % tArr.length;
                               
-                              // ถ้าคิวถัดไปถูกเลือกด้วยตนเอง (Manual Override) ให้ขยับ Pointer ไปที่ทีมนั้นเลย
                               const manualNextIndex = tArr.findIndex(t => t === form.nextTeam);
                               if (manualNextIndex !== -1) {
                                   newQ = manualNextIndex;
@@ -909,8 +913,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           }
                       }
 
-                      // 2. Save data to Firebase Tasks Collection (New row)
-                      const newTaskId = `task_assign_${Date.now()}`;
+                      // 2. เตรียมข้อมูลสำหรับส่งเข้า Sheet
                       const newTaskData = {
                           "วันที่แจ้ง Subcontract": form.date,
                           "CID Customer": form.cid,
@@ -918,31 +921,30 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           "บริษัทลูกค้า": form.customerName,
                           "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
                           "วันที่ยกเลิกใช้งาน": form.cancelDate,
-                          "สถานะ": "รอเข้าเก็บ",
-                          "_rowIndex": Date.now()
+                          "สถานะ": "รอเข้าเก็บ"
                       };
                       
                       const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
                       newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
 
-                      await collectionRef.doc(newTaskId).set(newTaskData);
-
-                      // 3. Send Line Message via GAS
+                      // 3. Send Line Message via GAS & Append to Sheet
                       const msg = generateMessage();
                       if (GAS_WEB_APP_URL) {
+                          const payloadData = JSON.stringify({ 
+                              action: 'sendLineNotify', 
+                              message: msg,
+                              taskData: newTaskData
+                          });
+                          // ใช้วิธีส่งแบบ text/plain แทน x-www-form-urlencoded
                           await fetch(GAS_WEB_APP_URL, {
                               method: 'POST',
                               mode: 'no-cors',
                               headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                              body: JSON.stringify({ 
-                                  action: 'sendLineNotify', 
-                                  message: msg,
-                                  taskData: newTaskData
-                              })
+                              body: payloadData
                           });
-                          alert('✅ ทำการบันทึกข้อมูลตารางงานและส่งข้อมูลให้ GAS เพื่อแจ้งเตือน Line เรียบร้อยแล้ว!');
+                          alert('✅ บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว!');
                       } else {
-                          alert('บันทึกข้อมูลตารางงานแล้ว แต่ไม่ได้ตั้งค่า URL ของ Google Apps Script');
+                          alert('ไม่ได้ตั้งค่า URL ของ Google Apps Script');
                       }
 
                       setForm(prev => ({...prev, cid: '', customerName: '', address: '', phone: '', details: '', cancelDate: ''}));
