@@ -270,7 +270,7 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz1yVkUHzabwRZ4HCe0T6UqPdEFVrKtUkZt6apXYaz7KS51iwe5QjvGmK8f9lYcvyWd/exec"; 
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzcpZK0BfhD2exNd6l-YBuPbHAujn7CHEmHJHb6RuiMhAGm8ZiM3BVq1QNwOXVwAsQo/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -374,15 +374,16 @@
                       uniqueTasksMap.set(mapKey, cleanData);
                   });
 
-                  // แก้ไขจุดนี้: ถอด ContentHash (ตัวกรองข้อมูลซ้ำ) ออก เพื่อให้แสดงแถวที่ Copy-Paste ได้
+                  const contentHashes = new Set();
                   const newTasks = Array.from(uniqueTasksMap.values()).filter(task => {
-                      // เช็คแค่ว่าแถวนั้นมีข้อมูลสำคัญอยู่ ไม่ใช่แถวว่างเปล่า
-                      const hasVitalData = Object.keys(task).some(k => 
-                          k !== 'id' && k !== '_rowIndex' && 
-                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
-                          String(task[k]).trim() !== ''
-                      );
-                      return hasVitalData; 
+                      const hasVitalData = Object.keys(task).some(k => k !== 'id' && k !== '_rowIndex' && !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && String(task[k]).trim() !== '');
+                      if (!hasVitalData) return false;
+                      const normalizedData = {};
+                      Object.keys(task).sort().forEach(k => { if (k !== 'id' && k !== '_rowIndex') normalizedData[k] = String(task[k] || '').trim(); });
+                      const hash = JSON.stringify(normalizedData);
+                      if (contentHashes.has(hash)) return false; 
+                      contentHashes.add(hash);
+                      return true;
                   });
 
                   newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
@@ -889,7 +890,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   setIsSending(true);
                   
                   try {
-                      // 1. Update Queue Index in Firebase
+                      // 1. Update Queue Index in Firebase (only if zone is selected)
                       if (form.zoneId) {
                           const zone = masterData.zones.find(z => z.id === form.zoneId);
                           if (zone) {
@@ -897,6 +898,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                               let currentQ = queueState[form.zoneId] || 0;
                               let newQ = (currentQ + 1) % tArr.length;
                               
+                              // ถ้าคิวถัดไปถูกเลือกด้วยตนเอง (Manual Override) ให้ขยับ Pointer ไปที่ทีมนั้นเลย
                               const manualNextIndex = tArr.findIndex(t => t === form.nextTeam);
                               if (manualNextIndex !== -1) {
                                   newQ = manualNextIndex;
@@ -907,7 +909,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           }
                       }
 
-                      // 2. เตรียมข้อมูลสำหรับส่งเข้า Sheet (ไม่ต้องส่งเขียน Firebase เองแล้ว ปล่อยให้ Sheet จัดการ)
+                      // 2. Save data to Firebase Tasks Collection (New row)
+                      const newTaskId = `task_assign_${Date.now()}`;
                       const newTaskData = {
                           "วันที่แจ้ง Subcontract": form.date,
                           "CID Customer": form.cid,
@@ -915,13 +918,16 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           "บริษัทลูกค้า": form.customerName,
                           "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
                           "วันที่ยกเลิกใช้งาน": form.cancelDate,
-                          "สถานะ": "รอเข้าเก็บ"
+                          "สถานะ": "รอเข้าเก็บ",
+                          "_rowIndex": Date.now()
                       };
                       
                       const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
                       newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
 
-                      // 3. Send Line Message via GAS & Append to Sheet
+                      await collectionRef.doc(newTaskId).set(newTaskData);
+
+                      // 3. Send Line Message via GAS
                       const msg = generateMessage();
                       if (GAS_WEB_APP_URL) {
                           await fetch(GAS_WEB_APP_URL, {
@@ -934,9 +940,9 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                   taskData: newTaskData
                               })
                           });
-                          alert('✅ บันทึกข้อมูลและส่งแจ้งเตือนเรียบร้อยแล้ว!');
+                          alert('✅ ทำการบันทึกข้อมูลตารางงานและส่งข้อมูลให้ GAS เพื่อแจ้งเตือน Line เรียบร้อยแล้ว!');
                       } else {
-                          alert('ไม่ได้ตั้งค่า URL ของ Google Apps Script');
+                          alert('บันทึกข้อมูลตารางงานแล้ว แต่ไม่ได้ตั้งค่า URL ของ Google Apps Script');
                       }
 
                       setForm(prev => ({...prev, cid: '', customerName: '', address: '', phone: '', details: '', cancelDate: ''}));
