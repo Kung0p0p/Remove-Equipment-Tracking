@@ -5,20 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Equipment Collection Dashboard</title>
     
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
+    <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 
+    <!-- Chart.js และ DataLabels -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 
@@ -410,7 +417,7 @@
             const [form, setForm] = useState(getInitialFormState());
             const [equipments, setEquipments] = useState([{ name: '', serial: '' }]);
             const [isSending, setIsSending] = useState(false);
-            const [searchCid, setSearchCid] = useState(''); // สำหรับช่องค้นหาดึงข้อมูล NS
+            const [searchCid, setSearchCid] = useState('');
 
             const allDistrictsMap = useMemo(() => {
                 let map = [];
@@ -421,33 +428,28 @@
                 return map.sort((a,b) => a.name.localeCompare(b.name, 'th'));
             }, [masterData.zones]);
 
-            // หาค่าจาก Key หลายรูปแบบ (เพื่อป้องกันชื่อคอลัมน์ใน Sheet พิมพ์ไม่ตรงเป๊ะ)
             const getVal = (t, keys) => {
                 const matchedKey = Object.keys(t).find(k => keys.some(kw => k.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,''))));
                 return matchedKey ? t[matchedKey] : '';
             };
 
-            // สร้างรายการ CID ของ NS ทั้งหมดเพื่อทำ Auto-Complete ตอนพิมพ์ค้นหา
             const nsCidOptions = useMemo(() => {
                 const cids = nsTasks.map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
                 return [...new Set(cids)];
             }, [nsTasks]);
 
-            // --- ฟังก์ชันอัจฉริยะ (Magic Autofill) ---
             const handleAutoFill = () => {
                 if (!searchCid.trim()) { alert("กรุณาพิมพ์เลข CIRCUIT NO. ที่ต้องการค้นหาครับ"); return; }
                 
-                // หาบรรทัดที่มี CID ตรงกับที่ค้นหา (ครอบคลุมตัวพิมพ์เล็ก/ใหญ่)
                 const matchedRows = nsTasks.filter(t => {
                     const cid = getVal(t, ['circuitno', 'cid']);
                     return String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
                 });
 
                 if (matchedRows.length > 0) {
-                    // ดึงข้อมูลพื้นฐานจากบรรทัดแรกที่เจอมาใส่ในฟอร์ม
                     const first = matchedRows[0];
                     let siteTypeVal = getVal(first, ['sitetype', 'originate', 'terminate']);
-                    if (!siteTypeVal || siteTypeVal.trim() === '') siteTypeVal = 'Terminate'; // ค่าเริ่มต้น
+                    if (!siteTypeVal || siteTypeVal.trim() === '') siteTypeVal = 'Terminate';
 
                     setForm(prev => ({
                         ...prev,
@@ -461,11 +463,10 @@
                         getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา'])
                     }));
 
-                    // ดึงรายการอุปกรณ์ทั้งหมดที่ซ้ำกันใน CID นี้ (1 CID -> หลายอุปกรณ์)
                     const equips = matchedRows.map(t => ({
                         name: getVal(t, ['itemname', 'อุปกรณ์']),
                         serial: getVal(t, ['serialno', 'serial', 'sn'])
-                    })).filter(e => e.name || e.serial); // เอาเฉพาะบรรทัดที่มีชื่อหรือซีเรียล
+                    })).filter(e => e.name || e.serial);
 
                     if (equips.length > 0) {
                         setEquipments(equips);
@@ -501,7 +502,6 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
-            // รูปแบบข้อความ LINE ใหม่ล่าสุดตามที่ผู้ใช้ขอ
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
@@ -537,7 +537,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
                         "วันที่ยกเลิกใช้งาน": form.cancelDate,
                         "สถานะ": "รอเข้าเก็บ",
-                        "_rowIndex": 999999
+                        "_rowIndex": 999999 
                     };
                     const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
                     newTaskData["รายละเอียดงาน"] = `[Site Type: ${form.siteType}] \n[เข้าเก็บ: ${form.getbackDate || '-'} เวลา ${form.getbackTime || '-'}] \n\n${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
@@ -657,7 +657,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป (ระบุเองได้)</label>
                                 <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm font-bold text-slate-600 bg-white focus:ring-2 focus:ring-slate-500 outline-none">
                                     <option value="">- เลือกระบุทีมเอง -</option>
                                     <optgroup label="ทีมในโซนพื้นที่">
@@ -720,8 +720,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
 
-                        {/* อุปกรณ์จะถูก Auto-fill มาเป็นตับ */}
-                        <div className="mt-2">
+                        <div className="mb-4">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์ (ITEM & SERIAL)</label>
                                 <button onClick={addEquip} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
@@ -777,6 +776,13 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+        
+        // ตั้งค่า Firestore ป้องกันปัญหาการเชื่อมต่อขัดข้อง (WebSocket Timeout) ในบางเครือข่าย
+        db.settings({
+            experimentalForceLongPolling: true,
+            useFetchStreams: false
+        });
+
         const collectionRef = db.collection('tasks');
         const nsCollectionRef = db.collection('ns_tasks'); // ฐานข้อมูลใหม่สำหรับ NS
         const historyRef = db.collection('task_history');
@@ -797,25 +803,22 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
         // --- THE MAIN APP COMPONENT ---
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
-          
-          const [tasks, setTasks] = useState([]); // ของ Subcontract
-          const [nsTasks, setNsTasks] = useState([]); // ของ NS
-          
+          const [tasks, setTasks] = useState([]);
+          const [nsTasks, setNsTasks] = useState([]); // state สำหรับ NS
           const [isLoading, setIsLoading] = useState(true);
           const [firebaseError, setFirebaseError] = useState(null); 
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
           
           const [columns, setColumns] = useState([]);
-          const [nsColumns, setNsColumns] = useState([]);
+          const [nsColumns, setNsColumns] = useState([]); // state สำหรับคอลัมน์ของ NS
           const [hiddenColumns, setHiddenColumns] = useState([]); 
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('subcontract'); // เลือกดู Dashboard Subcontract หรือ NS
-          const [dashboardYear, setDashboardYear] = useState('overview');
-          
-          const [tasksSubTab, setTasksSubTab] = useState('subcontract');
+          const [dashboardView, setDashboardView] = useState('subcontract'); // ค่าปริยายให้โชว์ Subcontract
+          const [dashboardYear, setDashboardYear] = useState('overview'); 
+          const [tasksSubTab, setTasksSubTab] = useState('subcontract'); 
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -841,8 +844,14 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
           const timeoutRef = useRef(null);
 
-          // โหลด Master Data
           useEffect(() => {
+              setIsLoading(true); setFirebaseError(null);
+              const savedCols = localStorage.getItem('equip_tracker_columns');
+              if (savedCols) setColumns(JSON.parse(savedCols));
+              
+              const savedNsCols = localStorage.getItem('equip_tracker_ns_columns');
+              if (savedNsCols) setNsColumns(JSON.parse(savedNsCols));
+
               const unsubMaster = masterDataRef.onSnapshot(doc => {
                   if (doc.exists && doc.data().zones) {
                       const data = doc.data();
@@ -855,21 +864,11 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       masterDataRef.set({ ...defaultMasterData, queue: {} }, { merge: true });
                   }
               });
-              return () => unsubMaster();
-          }, []);
-
-          // โหลดข้อมูลจาก 2 ฐาน (Subcontract และ NS)
-          useEffect(() => {
-              setIsLoading(true); setFirebaseError(null);
-              const savedCols = localStorage.getItem('equip_tracker_columns');
-              if (savedCols) setColumns(JSON.parse(savedCols));
-              
-              const savedNsCols = localStorage.getItem('equip_tracker_ns_columns');
-              if (savedNsCols) setNsColumns(JSON.parse(savedNsCols));
 
               // ดึงงาน Subcontract
               const unsubscribeTasks = collectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) return;
+                  
                   let allCols = new Set(columns);
                   let metadataCols = null;
                   let isSyncingStatus = false;
@@ -879,16 +878,24 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
+                      
+                      // อ่านสถานะ Sync Lock จาก Firebase เพื่อค้างหน้าจอไม่ให้วูบวาบ
                       if (doc.id === '_sync_status') {
                           const data = doc.data();
                           const ts = parseInt(data.timestamp?.integerValue) || 0;
-                          if (data.status?.stringValue === 'syncing' && (now - ts < 15000)) isSyncingStatus = true;
+                          if (data.status?.stringValue === 'syncing' && (now - ts < 15000)) {
+                              isSyncingStatus = true;
+                          }
                           return;
                       }
 
                       if (doc.id.startsWith('task_assign_')) {
-                          const ts = parseInt(doc.id.replace('task_assign_', ''));
-                          if (!isNaN(ts) && (now - ts > 15000)) { collectionRef.doc(doc.id).delete().catch(()=>{}); return; }
+                          const timestampStr = doc.id.replace('task_assign_', '');
+                          const timestamp = parseInt(timestampStr);
+                          if (!isNaN(timestamp) && (now - timestamp > 15000)) {
+                              collectionRef.doc(doc.id).delete().catch(()=>{});
+                              return; 
+                          }
                       }
 
                       const data = doc.data();
@@ -902,16 +909,25 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       });
                       
                       let rIndex = 0;
-                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
-                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
-                      else { const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
+                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) {
+                          rIndex = parseInt(data['_rowIndex'].integerValue);
+                      } else if (data['_rowIndex'] !== undefined) {
+                          rIndex = parseInt(data['_rowIndex']);
+                      } else {
+                          const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', ''));
+                          rIndex = isNaN(parsed) ? 999999 : parsed; 
+                      }
                       
                       cleanData._rowIndex = rIndex || 0;
                       
-                      if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
-                      else newTasks.push(cleanData);
+                      if (doc.id.startsWith('task_assign_')) {
+                          assignTasks.push(cleanData);
+                      } else {
+                          newTasks.push(cleanData);
+                      }
                   });
 
+                  // กำจัดข้อมูลจำลอง
                   assignTasks.forEach(assignT => {
                       const isDuplicate = newTasks.some(realT => {
                           const keysToCompare = Object.keys(assignT).filter(k => k !== 'id' && k !== '_rowIndex' && assignT[k] && assignT[k] !== '-');
@@ -925,24 +941,44 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   });
 
                   const validTasks = newTasks.filter(task => {
-                      return Object.keys(task).some(k => k !== 'id' && k !== '_rowIndex' && !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && String(task[k]).trim() !== '');
+                      return Object.keys(task).some(k => 
+                          k !== 'id' && k !== '_rowIndex' && 
+                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
+                          String(task[k]).trim() !== ''
+                      );
                   });
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
+                  const delayTime = 100; 
+                  
                   clearTimeout(timeoutRef.current);
                   timeoutRef.current = setTimeout(() => {
-                      if (isSyncingStatus) setIsBackgroundSyncing(true);
-                      else {
-                          setIsBackgroundSyncing(false); setTasks(validTasks); setFirebaseError(null); 
-                          if (metadataCols && Array.isArray(metadataCols)) { setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols)); }
-                          else if (allCols.size > columns.length) { const colsArray = Array.from(allCols); setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray)); }
+                      if (isSyncingStatus) {
+                          setIsBackgroundSyncing(true);
+                      } else {
+                          setIsBackgroundSyncing(false);
+                          setTasks(validTasks); 
+                          setFirebaseError(null); 
+                          
+                          if (metadataCols && Array.isArray(metadataCols)) {
+                              setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
+                          } else if (allCols.size > columns.length) {
+                              const colsArray = Array.from(allCols);
+                              setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
+                          }
                           localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
                           setIsLoading(false);
                       }
-                  }, 100);
-              }, (error) => { console.error("Firestore Error:", error); setFirebaseError(`Error: ${error.message}`); setIsLoading(false); });
-
+                  }, delayTime);
+                  
+              }, (error) => {
+                  console.error("Firestore Error:", error); setFirebaseError(`Firebase Error: ${error.message}`);
+                  const savedTasks = localStorage.getItem('equip_tracker_tasks');
+                  if (savedTasks && tasks.length === 0) setTasks(JSON.parse(savedTasks));
+                  setIsLoading(false);
+              });
+              
               // ดึงงาน NS
               const unsubscribeNS = nsCollectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) return;
@@ -971,7 +1007,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       
                       cleanData._rowIndex = rIndex || 0;
                       
-                      // เก็บเฉพาะแถวที่มีข้อมูล
                       const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
                       if(hasData) validTasks.push(cleanData);
                   });
@@ -985,7 +1020,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   }, 100);
               });
 
-              return () => { unsubscribeTasks(); unsubscribeNS(); };
+              return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
           }, []);
 
           // เลือกว่าจะโชว์คอลัมน์ของ Subcontract หรือ NS
@@ -1052,7 +1087,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               if (!teamName || String(teamName).trim() === '') return { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' };
               const str = String(teamName).trim();
               if (specificTeamColors[str.toLowerCase()]) return specificTeamColors[str.toLowerCase()];
-              let hash = 0; for (let i = 0; i < str.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+              let hash = 0; for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
@@ -1062,23 +1097,21 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               const oldValue = taskObj ? taskObj[field] : '';
               if(oldValue === value) return;
 
-              // อัปเดต UI ทันที
               if (tasksSubTab === 'subcontract') setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               else setNsTasks(nsTasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               
               try {
-                  // เลือกว่าจะเซฟลง Firebase ของใคร
                   const targetCollectionRef = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
                   const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
 
                   await targetCollectionRef.doc(id).set({ [field]: value }, { merge: true });
                   await historyRef.add({ taskId: id, company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-                  
                   if (GAS_WEB_APP_URL) {
                       const rowNum = id.replace('task_', ''); 
                       const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
                       fetch(GAS_WEB_APP_URL, {
-                          method: 'POST', mode: 'no-cors',
+                          method: 'POST',
+                          mode: 'no-cors',
                           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                           body: payloadData
                       }).catch(e => console.error("Sync to Sheet failed:", e));
