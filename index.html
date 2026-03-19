@@ -305,7 +305,7 @@
                         <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                             <div>
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900"><i className="fa-solid fa-database text-blue-600 mr-2"></i> จัดการฐานข้อมูลส่วนกลาง (Master Data)</h2>
-                                <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงานทั้งหมด (ไม่มีตั้งค่า Line ในนี้แล้วเพื่อความปลอดภัย)</p>
+                                <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงานทั้งหมด</p>
                             </div>
                             <div className="flex gap-2">
                                 {!isEditing ? (
@@ -326,9 +326,7 @@
                         </header>
 
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Left/Top Column: Teams */}
                             <div className="lg:col-span-1 space-y-6">
-                                {/* All Teams Database */}
                                 <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
                                     <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-indigo-500 mr-2"></i> ฐานข้อมูลทีมงานทั้งหมด</h3>
                                     <div>
@@ -345,7 +343,6 @@
                                 </div>
                             </div>
 
-                            {/* Right/Bottom Column: Zones (Compact Grid) */}
                             <div className="lg:col-span-2">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-slate-800"><i className="fa-solid fa-map-location-dot text-amber-500 mr-2"></i> ฐานข้อมูลโซนพื้นที่ (Zones)</h3>
@@ -356,7 +353,6 @@
                                     )}
                                 </div>
                                 
-                                {/* Compact Grid for Zones */}
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                                     {tempData.zones.map((zone, idx) => (
                                         <div key={zone.id} className={`p-4 rounded-xl border shadow-sm relative transition-colors ${isEditing ? 'bg-white border-amber-200 hover:shadow-md' : 'bg-slate-100/50 border-slate-200'}`}>
@@ -372,7 +368,6 @@
                                                         value={zone.name} 
                                                         onChange={e => handleSaveZone(idx, 'name', e.target.value)} 
                                                         className="w-full mt-0.5 px-2 py-1 border-b border-slate-200 bg-transparent outline-none focus:border-amber-500 text-sm font-bold text-slate-800 disabled:text-slate-600" 
-                                                        placeholder="ชื่อโซน..." 
                                                     />
                                                 </div>
                                                 <div>
@@ -383,7 +378,7 @@
                                                         onChange={e => handleSaveZone(idx, 'districts', e.target.value)} 
                                                         rows="2" 
                                                         className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0" 
-                                                        placeholder="ระบุเขต..."></textarea>
+                                                        ></textarea>
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">ทีมที่รับผิดชอบ (เรียงตามคิว)</label>
@@ -393,7 +388,7 @@
                                                         onChange={e => handleSaveZone(idx, 'teams', e.target.value)} 
                                                         rows="1" 
                                                         className="w-full mt-0.5 px-2 py-1 border border-slate-200 rounded bg-slate-50 outline-none focus:ring-1 focus:ring-amber-500 text-xs disabled:bg-transparent disabled:border-transparent disabled:px-0 font-semibold text-indigo-700" 
-                                                        placeholder="ทีม A, ทีม B..."></textarea>
+                                                        ></textarea>
                                                 </div>
                                             </div>
                                         </div>
@@ -481,7 +476,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 setIsSending(true);
                 
                 try {
-                    // 1. สร้าง ID จำลอง เพื่อให้เว็บแสดงผลทันทีแบบไม่ต้องรอ
                     const newTaskId = `task_assign_${Date.now()}`;
                     const newTaskData = {
                         "วันที่แจ้ง Subcontract": form.date,
@@ -491,15 +485,13 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
                         "วันที่ยกเลิกใช้งาน": form.cancelDate,
                         "สถานะ": "รอเข้าเก็บ",
-                        "_rowIndex": 999999 // ใส่ค่าให้มันไปอยู่ล่างสุดเสมอ
+                        "_rowIndex": 999999
                     };
                     const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
                     newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
 
-                    // เขียนลง Firebase ทันที เพื่อให้แสดงผลในตาราง 
                     await collectionRef.doc(newTaskId).set(newTaskData);
 
-                    // อัปเดตคิวใน Firebase
                     if (form.zoneId) {
                         const zone = masterData.zones.find(z => z.id === form.zoneId);
                         if (zone) {
@@ -518,7 +510,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     const msg = generateMessage();
                     alert('✅ สั่งงานเรียบร้อย (ระบบกำลังจัดการส่ง LINE และลง Sheet ให้อัตโนมัติ)');
                     
-                    // รีเซ็ตฟอร์มทั้งหมด 100% ให้พร้อมใช้งานใหม่ทันที
                     setForm(getInitialFormState());
                     setEquipments([{ name: '', serial: '' }]);
 
@@ -529,8 +520,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             taskData: newTaskData,
                             tempTaskId: newTaskId 
                         });
-                        
-                        // Background Process ส่งข้อมูลให้ Sheet จัดการเงียบๆ
                         fetch(GAS_WEB_APP_URL, {
                             method: 'POST',
                             mode: 'no-cors',
@@ -656,7 +645,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         </div>
                     </div>
 
-                    {/* Right: Preview & Send */}
                     <div className="w-full lg:w-[400px] flex flex-col">
                         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                             <div className="bg-slate-800 text-white p-3 font-bold text-center flex justify-between items-center">
@@ -727,7 +715,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
           const [dashboardView, setDashboardView] = useState('overview'); 
-          const [tasksSubTab, setTasksSubTab] = useState('subcontract');
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -750,6 +737,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [masterData, setMasterData] = useState(defaultMasterData);
           const [queueState, setQueueState] = useState({});
           
+          const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
           const timeoutRef = useRef(null);
 
           useEffect(() => {
@@ -777,20 +765,23 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   
                   let allCols = new Set(columns);
                   let metadataCols = null;
-                  const newTasks = [];
+                  let isSyncingStatus = false;
+                  
+                  const realTasks = [];
+                  const assignTasks = [];
                   const now = Date.now();
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
                       
-                      // ฆ่าข้อมูลผี: ถ้าเป็นข้อมูลจำลองที่สร้างจากเว็บ และมีอายุเกิน 15 วินาที ให้สั่งลบทิ้งเลย
-                      if (doc.id.startsWith('task_assign_')) {
-                          const timestampStr = doc.id.replace('task_assign_', '');
-                          const timestamp = parseInt(timestampStr);
-                          if (!isNaN(timestamp) && (now - timestamp > 15000)) {
-                              collectionRef.doc(doc.id).delete().catch(()=>{});
-                              return; 
+                      // อ่านสถานะ Sync Lock จาก Firebase เพื่อค้างหน้าจอไม่ให้วูบวาบ
+                      if (doc.id === '_sync_status') {
+                          const data = doc.data();
+                          const ts = parseInt(data.timestamp?.integerValue) || 0;
+                          if (data.status?.stringValue === 'syncing' && (now - ts < 15000)) {
+                              isSyncingStatus = true;
                           }
+                          return;
                       }
 
                       const data = doc.data();
@@ -803,19 +794,45 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           }
                       });
                       
-                      let rIndex = data['_rowIndex']?.integerValue;
-                      if (rIndex == null) rIndex = data['_rowIndex'];
-                      if (rIndex == null) {
+                      let rIndex = 0;
+                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) {
+                          rIndex = parseInt(data['_rowIndex'].integerValue);
+                      } else if (data['_rowIndex'] !== undefined) {
+                          rIndex = parseInt(data['_rowIndex']);
+                      } else {
                           const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', ''));
-                          rIndex = isNaN(parsed) ? 999999 : parsed; // ให้ข้อมูลจำลองอยู่ล่างสุดเสมอ
+                          rIndex = isNaN(parsed) ? 999999 : parsed; 
                       }
-                      cleanData._rowIndex = parseInt(rIndex) || 0;
                       
-                      newTasks.push(cleanData);
+                      cleanData._rowIndex = rIndex || 0;
+                      
+                      if (doc.id.startsWith('task_assign_')) {
+                          assignTasks.push(cleanData);
+                      } else {
+                          realTasks.push(cleanData);
+                      }
                   });
 
-                  // เอาตัวกรองข้อมูลซ้ำออกทั้งหมด: ก๊อปปี้ข้อมูลวาง ก็จะโชว์ข้อมูล 100% ไม่ถูกซ่อนอีกต่อไป
-                  const validTasks = newTasks.filter(task => {
+                  // นักล่าข้อมูลซ้ำ (Duplicate Hunter): ไล่ฆ่าข้อมูลจำลองที่กลายเป็นตัวจริงแล้วทิ้ง
+                  assignTasks.forEach(assignT => {
+                      const isDuplicate = realTasks.some(realT => {
+                          // เทียบฟิลด์ที่สำคัญ
+                          const keysToCompare = Object.keys(assignT).filter(k => k !== 'id' && k !== '_rowIndex' && assignT[k] && assignT[k] !== '-');
+                          if (keysToCompare.length === 0) return false;
+                          return keysToCompare.every(k => realT[k] === assignT[k]);
+                      });
+
+                      const timestamp = parseInt(assignT.id.replace('task_assign_', ''));
+                      const isExpired = !isNaN(timestamp) && (now - timestamp > 15000);
+
+                      if (isDuplicate || isExpired) {
+                          collectionRef.doc(assignT.id).delete().catch(()=>{});
+                      } else {
+                          realTasks.push(assignT);
+                      }
+                  });
+
+                  const validTasks = realTasks.filter(task => {
                       return Object.keys(task).some(k => 
                           k !== 'id' && k !== '_rowIndex' && 
                           !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
@@ -825,23 +842,26 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-                  // ระบบหน่วงเวลาเฉพาะกรณีมีการอัปเดตชุดใหญ่ เพื่อป้องกันหน้าจอกระตุกและแถวหายชั่วคราว
-                  const isBatchUpdate = snapshot.docChanges().length > 2;
-                  const delayTime = isBatchUpdate ? 1500 : 0; 
+                  const delayTime = 100; 
                   
                   clearTimeout(timeoutRef.current);
                   timeoutRef.current = setTimeout(() => {
-                      setTasks(validTasks); 
-                      setFirebaseError(null); 
-                      
-                      if (metadataCols && Array.isArray(metadataCols)) {
-                          setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
-                      } else if (allCols.size > columns.length) {
-                          const colsArray = Array.from(allCols);
-                          setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
+                      if (isSyncingStatus) {
+                          setIsBackgroundSyncing(true);
+                      } else {
+                          setIsBackgroundSyncing(false);
+                          setTasks(validTasks); 
+                          setFirebaseError(null); 
+                          
+                          if (metadataCols && Array.isArray(metadataCols)) {
+                              setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
+                          } else if (allCols.size > columns.length) {
+                              const colsArray = Array.from(allCols);
+                              setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
+                          }
+                          localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
+                          setIsLoading(false);
                       }
-                      localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
-                      setIsLoading(false);
                   }, delayTime);
                   
               }, (error) => {
@@ -995,7 +1015,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return matchMonth && matchTeam && matchYearView;
           });
 
-          // Dashboard variables...
           const uniqueMonths = [...new Set(tasks.map(t => { const d = parseDateHelper(getTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
           const uniqueColMonths = [...new Set(tasks.map(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
           const uniqueCIDs = cidCol ? [...new Set(tasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
@@ -1087,7 +1106,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           }
           if (sortConfig.key && sortConfig.direction) tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
           if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
-          const finalTableTasks = tasksSubTab === 'subcontract' ? tableTasks : [];
+          const finalTableTasks = tableTasks;
 
           const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
           const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
@@ -1148,17 +1167,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         </div>
                     )}
                   </div>
-                  <div className="space-y-1">
-                    <button onClick={() => { setActiveTab('tasks'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tasks' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
-                      <i className={`fa-solid fa-table-list text-lg w-6 text-center ${activeTab === 'tasks' ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">ตารางงาน (All Data)</span>
-                    </button>
-                    {activeTab === 'tasks' && isSidebarOpen && (
-                        <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
-                            <button onClick={() => { setTasksSubTab('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
-                            <button onClick={() => { setTasksSubTab('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
-                        </div>
-                    )}
-                  </div>
+                  <SidebarItem id="tasks" iconClass="fa-solid fa-table-list" label="ตารางงาน (All Data)" />
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
                   
                   <div className="pt-4 mt-2 border-t border-slate-100">
@@ -1168,8 +1177,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   </div>
                 </nav>
                 <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium shrink-0">
-                  <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
-                  {isLoading ? <span className="text-slate-500">Syncing...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span> : <span className="text-emerald-600">Live Synced</span>}
+                  <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
+                  {isLoading || isBackgroundSyncing ? <span className="text-blue-500 font-bold">Syncing with Sheet...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
                 </div>
               </aside>
 
@@ -1290,7 +1299,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             : tasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า</td></tr>
                             : finalTableTasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูล...</td></tr>
                             : finalTableTasks.map((task) => (
-                              <tr key={task.id} className="hover:bg-slate-50 transition-colors">
+                              <tr key={task.id} className={`transition-colors ${isBackgroundSyncing ? 'opacity-70 pointer-events-none' : 'hover:bg-slate-50'}`}>
                                 {visibleColumns.map((col, idx) => {
                                     const hasFixedWidth = colWidths[col] !== undefined;
                                     const isStatusCell = col === statusCol, isTeamCell = col === teamCol, isOverDueCell = col === overDueCol; 
