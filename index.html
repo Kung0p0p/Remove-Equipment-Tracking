@@ -433,6 +433,7 @@
                 return matchedKey ? t[matchedKey] : '';
             };
 
+            // อัปเดตรายการ CID Auto-complete (ดึงเฉพาะ Circuit NO อย่างเดียว)
             const nsCidOptions = useMemo(() => {
                 const cids = nsTasks.map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
                 return [...new Set(cids)];
@@ -441,20 +442,20 @@
             const handleAutoFill = () => {
                 if (!searchCid.trim()) { alert("กรุณาพิมพ์เลข CIRCUIT NO. ที่ต้องการค้นหาครับ"); return; }
                 
+                // กรองด้วยเงื่อนไข 2 ชั้น: Circuit NO + Site Type
                 const matchedRows = nsTasks.filter(t => {
                     const cid = getVal(t, ['circuitno', 'cid']);
-                    return String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
+                    const st = getVal(t, ['sitetype', 'originate', 'terminate', 'site type']); // รองรับหลายชื่อหัวคอลัมน์
+                    const matchCid = String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
+                    const matchType = String(st).trim().toLowerCase() === form.siteType.trim().toLowerCase();
+                    return matchCid && matchType;
                 });
 
                 if (matchedRows.length > 0) {
                     const first = matchedRows[0];
-                    let siteTypeVal = getVal(first, ['sitetype', 'originate', 'terminate']);
-                    if (!siteTypeVal || siteTypeVal.trim() === '') siteTypeVal = 'Terminate';
-
                     setForm(prev => ({
                         ...prev,
                         cid: getVal(first, ['circuitno', 'cid']),
-                        siteType: siteTypeVal,
                         customerName: getVal(first, ['customername', 'บริษัท']),
                         address: getVal(first, ['address', 'ที่อยู่']),
                         phone: getVal(first, ['customercontract', 'contract', 'เบอร์', 'phone']),
@@ -463,6 +464,7 @@
                         getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา'])
                     }));
 
+                    // ดึงอุปกรณ์จาก 'ทุกแถว' ที่ผ่านการกรอง (รวมอุปกรณ์ 1-to-many)
                     const equips = matchedRows.map(t => ({
                         name: getVal(t, ['itemname', 'อุปกรณ์']),
                         serial: getVal(t, ['serialno', 'serial', 'sn'])
@@ -473,9 +475,9 @@
                     } else {
                         setEquipments([{ name: '', serial: '' }]);
                     }
-                    alert(`✅ ดึงข้อมูล CID: ${searchCid} สำเร็จ! (พบอุปกรณ์ ${equips.length} รายการ)`);
+                    alert(`✅ ดึงข้อมูล CID: ${searchCid} (ประเภท: ${form.siteType}) สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
                 } else {
-                    alert(`❌ ไม่พบข้อมูล CID: "${searchCid}" ในฐานข้อมูล NS ครับ\nโปรดตรวจสอบตัวสะกดอีกครั้ง`);
+                    alert(`❌ ไม่พบข้อมูลของ\nCID: "${searchCid}"\nSite Type: "${form.siteType}"\nในฐานข้อมูล NS ครับ โปรดตรวจสอบตัวสะกดหรือเปลี่ยนประเภท Site Type แล้วลองใหม่`);
                 }
             };
 
@@ -502,11 +504,12 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
+            // ปรับข้อความ LINE ไม่ให้มี Site Type แล้วตามที่ร้องขอ
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
  📅 วันที่/เวลาแจ้ง: ${form.date}
- CIDs: ${form.cid || '-'}                      ${form.siteType}
+ CIDs: ${form.cid || '-'}
 
  ผู้รับเหมา: ${form.team || '-'}
  บริษัทลูกค้า: ${form.customerName || '-'}
@@ -604,24 +607,30 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             <h2 className="text-xl font-bold text-slate-800"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
                         </div>
 
-                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ */}
+                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ (เพิ่ม Site Type) */}
                         <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl shadow-sm">
                             <h3 className="text-sm font-bold text-indigo-800 mb-2"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i> ดึงข้อมูลอัตโนมัติจากฐานข้อมูล NS</h3>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="พิมพ์ CIRCUIT NO. เพื่อค้นหาและดึงข้อมูล..." 
-                                    value={searchCid} 
-                                    onChange={e => setSearchCid(e.target.value)} 
-                                    className="flex-1 px-3 py-2 rounded-lg border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold" 
-                                    list="ns-cids-list" 
-                                />
-                                <datalist id="ns-cids-list">
-                                    {nsCidOptions.map((c, i) => <option key={i} value={c} />)}
-                                </datalist>
-                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap">ดึงข้อมูล NS</button>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <div className="flex-1 flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        placeholder="พิมพ์ CIRCUIT NO. เพื่อค้นหา..." 
+                                        value={searchCid} 
+                                        onChange={e => setSearchCid(e.target.value)} 
+                                        className="flex-1 px-3 py-2 rounded-lg border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold" 
+                                        list="ns-cids-list" 
+                                    />
+                                    <datalist id="ns-cids-list">
+                                        {nsCidOptions.map((c, i) => <option key={i} value={c} />)}
+                                    </datalist>
+                                    <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="px-2 py-2 border border-indigo-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-800 bg-white">
+                                        <option value="Terminate">Terminate</option>
+                                        <option value="Originate">Originate</option>
+                                    </select>
+                                </div>
+                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap"><i className="fa-solid fa-cloud-arrow-down mr-1"></i> ดึงข้อมูล NS</button>
                             </div>
-                            <p className="text-[10px] text-indigo-600 mt-1.5">*เมื่อใส่ CID ระบบจะดึง "อุปกรณ์และซีเรียล" ทุกรายการของ CID นี้มารวมกันให้อัตโนมัติ</p>
+                            <p className="text-[10px] text-indigo-600 mt-1.5">*เมื่อใส่ CID และเลือก Site Type ให้ตรงกัน ระบบจะดึง "อุปกรณ์และซีเรียล" ทุกรายการมารวมให้ในฟอร์มเดียวอัตโนมัติ</p>
                         </div>
                         
                         {/* ฟอร์มข้อมูลการจ่ายงาน */}
@@ -670,20 +679,10 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
 
-                        {/* ฟิลด์ข้อมูลลูกค้าที่ผูกกับ Auto-fill */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                            <div className="flex gap-2">
-                                <div className="flex-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">CIDs (CIRCUIT NO.)</label>
-                                    <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm font-bold text-blue-700" />
-                                </div>
-                                <div className="w-1/3">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Site Type</label>
-                                    <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="w-full mt-1 px-2 py-1.5 border rounded-md text-sm outline-none">
-                                        <option value="Terminate">Terminate</option>
-                                        <option value="Originate">Originate</option>
-                                    </select>
-                                </div>
+                            <div className="md:col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase">CIDs (CIRCUIT NO.)</label>
+                                <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm font-bold text-blue-700" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า (Customer Name)</label>
@@ -702,7 +701,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 <input type="text" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm text-red-600" />
                             </div>
                             
-                            {/* ฟิลด์ใหม่ Getback Date/Time */}
                             <div className="flex gap-2 md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
                                 <div className="flex-1">
                                     <label className="text-xs font-bold text-slate-500 uppercase"><i className="fa-regular fa-calendar-check mr-1"></i>วันที่เข้าเก็บ (Getback Date)</label>
@@ -777,14 +775,13 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         
-        // ตั้งค่า Firestore ป้องกันปัญหาการเชื่อมต่อขัดข้อง (WebSocket Timeout) ในบางเครือข่าย
         db.settings({
             experimentalForceLongPolling: true,
             useFetchStreams: false
         });
 
         const collectionRef = db.collection('tasks');
-        const nsCollectionRef = db.collection('ns_tasks'); // ฐานข้อมูลใหม่สำหรับ NS
+        const nsCollectionRef = db.collection('ns_tasks'); 
         const historyRef = db.collection('task_history');
         const masterDataRef = db.collection('master_data').doc('zones_teams');
 
@@ -804,19 +801,19 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
           const [tasks, setTasks] = useState([]);
-          const [nsTasks, setNsTasks] = useState([]); // state สำหรับ NS
+          const [nsTasks, setNsTasks] = useState([]); 
           const [isLoading, setIsLoading] = useState(true);
           const [firebaseError, setFirebaseError] = useState(null); 
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
           
           const [columns, setColumns] = useState([]);
-          const [nsColumns, setNsColumns] = useState([]); // state สำหรับคอลัมน์ของ NS
+          const [nsColumns, setNsColumns] = useState([]); 
           const [hiddenColumns, setHiddenColumns] = useState([]); 
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('subcontract'); // ค่าปริยายให้โชว์ Subcontract
+          const [dashboardView, setDashboardView] = useState('subcontract'); 
           const [dashboardYear, setDashboardYear] = useState('overview'); 
           const [tasksSubTab, setTasksSubTab] = useState('subcontract'); 
 
@@ -879,7 +876,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
                       
-                      // อ่านสถานะ Sync Lock จาก Firebase เพื่อค้างหน้าจอไม่ให้วูบวาบ
                       if (doc.id === '_sync_status') {
                           const data = doc.data();
                           const ts = parseInt(data.timestamp?.integerValue) || 0;
@@ -909,25 +905,16 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       });
                       
                       let rIndex = 0;
-                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) {
-                          rIndex = parseInt(data['_rowIndex'].integerValue);
-                      } else if (data['_rowIndex'] !== undefined) {
-                          rIndex = parseInt(data['_rowIndex']);
-                      } else {
-                          const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', ''));
-                          rIndex = isNaN(parsed) ? 999999 : parsed; 
-                      }
+                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
+                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
+                      else { const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
                       
                       cleanData._rowIndex = rIndex || 0;
                       
-                      if (doc.id.startsWith('task_assign_')) {
-                          assignTasks.push(cleanData);
-                      } else {
-                          newTasks.push(cleanData);
-                      }
+                      if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
+                      else newTasks.push(cleanData);
                   });
 
-                  // กำจัดข้อมูลจำลอง
                   assignTasks.forEach(assignT => {
                       const isDuplicate = newTasks.some(realT => {
                           const keysToCompare = Object.keys(assignT).filter(k => k !== 'id' && k !== '_rowIndex' && assignT[k] && assignT[k] !== '-');
@@ -1023,7 +1010,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
           }, []);
 
-          // เลือกว่าจะโชว์คอลัมน์ของ Subcontract หรือ NS
           const currentColumns = tasksSubTab === 'subcontract' ? columns : nsColumns;
           const currentTasks = tasksSubTab === 'subcontract' ? tasks : nsTasks;
           
@@ -1091,35 +1077,55 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
-          const handleCellChange = async (id, field, value) => {
-              const previousTasks = [...currentTasks];
-              const taskObj = previousTasks.find(t => t.id === id);
-              const oldValue = taskObj ? taskObj[field] : '';
-              if(oldValue === value) return;
+          // อัปเกรดระบบรองรับการแก้ไขข้อมูลแบบกลุ่ม (Group Edit)
+          const handleCellChange = async (taskObj, field, value) => {
+              const docIds = taskObj._groupDocs || [taskObj.id];
+              
+              // ป้องกันการแก้ไขคอลัมน์ชื่ออุปกรณ์/ซีเรียล ที่ถูกจับมัดรวมกันแล้ว
+              const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
+              const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
+              if (docIds.length > 1 && (field === itemColMatch || field === snColMatch)) {
+                  alert('ไม่สามารถแก้ไขข้อมูลอุปกรณ์/ซีเรียล ที่ถูกจัดกลุ่มรวมกันได้ กรุณาแก้ไขแยกทีละบรรทัดใน Google Sheet แทนครับ');
+                  return false; 
+              }
 
-              if (tasksSubTab === 'subcontract') setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
-              else setNsTasks(nsTasks.map(task => task.id === id ? { ...task, [field]: value } : task));
+              const oldValue = taskObj[field] || '';
+              if(oldValue === value) return true;
+
+              if (tasksSubTab === 'subcontract') {
+                  setTasks(tasks.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
+              } else {
+                  setNsTasks(nsTasks.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
+              }
               
               try {
                   const targetCollectionRef = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
                   const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
 
-                  await targetCollectionRef.doc(id).set({ [field]: value }, { merge: true });
-                  await historyRef.add({ taskId: id, company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                  const batch = db.batch();
+                  docIds.forEach(id => {
+                      batch.set(targetCollectionRef.doc(id), { [field]: value }, { merge: true });
+                  });
+                  await batch.commit();
+
+                  await historyRef.add({ taskId: docIds[0], company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length });
+                  
                   if (GAS_WEB_APP_URL) {
-                      const rowNum = id.replace('task_', ''); 
-                      const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
-                      fetch(GAS_WEB_APP_URL, {
-                          method: 'POST',
-                          mode: 'no-cors',
-                          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                          body: payloadData
-                      }).catch(e => console.error("Sync to Sheet failed:", e));
+                      docIds.forEach(id => {
+                          const rowNum = id.replace('task_', ''); 
+                          const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
+                          fetch(GAS_WEB_APP_URL, {
+                              method: 'POST', mode: 'no-cors',
+                              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                              body: payloadData
+                          }).catch(e => console.error("Sync to Sheet failed:", e));
+                      });
                   }
+                  return true;
               } catch (e) {
                   console.error("Error updating document: ", e); 
-                  if (tasksSubTab === 'subcontract') setTasks(previousTasks); else setNsTasks(previousTasks);
                   alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
+                  return false;
               }
           };
 
@@ -1251,6 +1257,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
+          // กรองข้อมูลตารางตาม Filter และยุบรวมข้อมูล NS
           let tableTasks = [...currentTasks]; 
           if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
           if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
@@ -1268,7 +1275,44 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           }
           if (sortConfig.key && sortConfig.direction) tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
           if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
-          const finalTableTasks = tableTasks;
+          
+          // --- ระบบ Grouping รวบ Circuit NO. ซ้ำให้เป็นแถวเดียว สำหรับตาราง NS ---
+          let processedTasks = tableTasks;
+          const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
+          const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
+
+          if (tasksSubTab === 'ns') {
+              const grouped = new Map();
+              const cidColMatch = currentColumns.find(c => c?.toLowerCase().includes('circuit no') || c?.toLowerCase().includes('cid')) || '';
+              const siteTypeColMatch = currentColumns.find(c => c?.toLowerCase().includes('site type') || c?.toLowerCase().includes('sitetype') || c?.toLowerCase() === 'site') || '';
+
+              processedTasks.forEach(t => {
+                  const cid = cidColMatch ? t[cidColMatch] : '';
+                  const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
+                  
+                  if (!cid || String(cid).trim() === '') {
+                      grouped.set(t.id, { ...t, _groupDocs: [t.id] });
+                      return;
+                  }
+                  
+                  const groupKey = `${cid}_${st}`.trim();
+                  if (!grouped.has(groupKey)) {
+                      grouped.set(groupKey, { ...t, _groupDocs: [t.id] });
+                  } else {
+                      const existing = grouped.get(groupKey);
+                      existing._groupDocs.push(t.id);
+                      if (itemColMatch && t[itemColMatch]) {
+                          existing[itemColMatch] = existing[itemColMatch] ? `${existing[itemColMatch]}\n${t[itemColMatch]}` : t[itemColMatch];
+                      }
+                      if (snColMatch && t[snColMatch]) {
+                          existing[snColMatch] = existing[snColMatch] ? `${existing[snColMatch]}\n${t[snColMatch]}` : t[snColMatch];
+                      }
+                  }
+              });
+              processedTasks = Array.from(grouped.values());
+          }
+          
+          const finalTableTasks = processedTasks;
 
           const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
           const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
@@ -1480,8 +1524,12 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 {visibleColumns.map((col, idx) => {
                                     const hasFixedWidth = colWidths[col] !== undefined;
                                     const isStatusCell = col === statusCol, isTeamCell = col === teamCol, isOverDueCell = col === overDueCol; 
+                                    
+                                    const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
+                                    const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
+                                    const isGroupedMultiLine = task._groupDocs && task._groupDocs.length > 1 && (col === itemColMatch || col === snColMatch);
+                                    
                                     const val = task[col] || '', cleanVal = getCleanStatus(val), cellId = `${task.id}-${col}`, isEditing = editingCell === cellId;
-                                    let cellStyle = `editable-cell text-xs md:text-sm ${isEditing ? 'editing text-slate-800' : ''}`;
                                     let styleObj = {};
                                     
                                     if (isStatusCell) {
@@ -1495,15 +1543,18 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                         else if (num > 0 || cleanVal.includes('เหลือ')) styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     }
 
+                                    const tdWhiteSpace = isGroupedMultiLine ? 'pre-wrap' : 'nowrap';
+                                    const textAlignment = isGroupedMultiLine ? 'left' : (isTeamCell || isStatusCell || isOverDueCell ? 'center' : 'left');
+
                                     return (
-                                        <td key={idx} className="p-1 md:p-1.5 align-middle border-r border-slate-100 overflow-hidden text-ellipsis" style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }}>
+                                        <td key={idx} className="p-1 md:p-1.5 border-r border-slate-100" style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col], verticalAlign: 'top' } : { verticalAlign: 'top' }}>
                                             {isStatusCell ? (
                                                 <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
-                                                    <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none whitespace-nowrap overflow-hidden text-ellipsis text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task.id, col, e.target.innerText); setEditingCell(null); }}>{val}</div>
-                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer"><i className="fa-solid fa-chevron-down text-[10px]"></i><select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task.id, col, e.target.value); }}><option value="" disabled></option>{uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                                    <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
+                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer"><i className="fa-solid fa-chevron-down text-[10px]"></i><select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task, col, e.target.value); }}><option value="" disabled></option>{uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                                                 </div>
                                             ) : (
-                                                <div contentEditable={isEditing} suppressContentEditableWarning={true} className={cellStyle} style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task.id, col, e.target.innerText); setEditingCell(null); }}>{val}</div>
+                                                <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`px-2 md:px-3 py-1 outline-none editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer', whiteSpace: tdWhiteSpace, wordBreak: isGroupedMultiLine ? 'break-all' : 'normal', textAlign: textAlignment, lineHeight: isGroupedMultiLine ? '1.8' : '20px', overflow: isGroupedMultiLine ? 'visible' : 'hidden', textOverflow: isGroupedMultiLine ? 'clip' : 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
                                             )}
                                         </td>
                                     )
