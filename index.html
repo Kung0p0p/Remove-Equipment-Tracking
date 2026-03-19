@@ -43,6 +43,12 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        /* Scrollbar มินิสำหรับเซลล์ที่มีข้อมูลยาวๆ ซ้อนกัน */
+        .cell-scrollbar::-webkit-scrollbar { width: 4px; }
+        .cell-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .cell-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .cell-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
         .editable-cell {
             width: 100%; background: transparent; border: 1px solid transparent; padding: 4px 8px;
             border-radius: 4px; outline: none; transition: all 0.2s; white-space: nowrap;
@@ -67,6 +73,11 @@
             content: ''; position: absolute; left: -8px; top: 12px;
             border-style: solid; border-width: 6px 10px 6px 0; border-color: transparent #ffffff transparent transparent;
         }
+
+        /* ตรึงคอลัมน์แบบ Sticky */
+        .sticky-col-header { position: sticky; left: 0; z-index: 50; outline: 1px solid #334155; }
+        .sticky-col-cell { position: sticky; left: 0; z-index: 20; background-color: #f8fafc; outline: 1px solid #e2e8f0; }
+        .tr-hover:hover .sticky-col-cell { background-color: #f1f5f9; }
     </style>
 </head>
 <body>
@@ -77,7 +88,7 @@
             Chart.register(ChartDataLabels);
         }
 
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useTransition } = React;
 
         // --- Helper Functions ---
         const formatSheetDate = (val) => {
@@ -402,9 +413,9 @@
         };
 
         // -------------------------------------------------------------
-        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (ปรับ UI & Autofill อัจฉริยะ) ---
+        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (พร้อมระบบ Magic Autofill) ---
         // -------------------------------------------------------------
-        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks }) => {
+        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks, autoAssignData, clearAutoAssignData }) => {
             
             const getInitialFormState = () => {
                 const now = new Date();
@@ -439,31 +450,36 @@
                 return [...new Set(cids)];
             }, [nsTasks]);
 
-            // Magic Auto Fill ที่อัปเกรดใหม่: ทับข้อมูลเดิม 100% & สลับ Site Type ให้ถ้าจำเป็น
-            const handleAutoFill = () => {
-                if (!searchCid.trim()) { alert("กรุณาพิมพ์เลข CIRCUIT NO. ที่ต้องการค้นหาครับ"); return; }
+            // --- ระบบรับคำสั่ง Direct Assign จากหน้าตาราง ---
+            useEffect(() => {
+                if (autoAssignData && autoAssignData.cid) {
+                    setSearchCid(autoAssignData.cid);
+                    executeAutoFill(autoAssignData.cid, autoAssignData.siteType || 'Terminate');
+                    clearAutoAssignData();
+                }
+            }, [autoAssignData]);
+
+            const executeAutoFill = (searchCidValue, currentSiteType) => {
+                if (!searchCidValue.trim()) return;
                 
-                // หา CID ให้เจอก่อน (ไม่สนเรื่อง Site Type)
                 const matchedCids = nsTasks.filter(t => {
                     const cid = getVal(t, ['circuitno', 'cid']);
-                    return String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
+                    return String(cid).trim().toLowerCase() === searchCidValue.trim().toLowerCase();
                 });
 
                 if (matchedCids.length === 0) {
-                    alert(`❌ ไม่พบข้อมูล CID: "${searchCid}" ในฐานข้อมูล NS ครับ`);
+                    alert(`❌ ไม่พบข้อมูล CID: "${searchCidValue}" ในฐานข้อมูล NS ครับ`);
                     return;
                 }
 
-                // กรองเฉพาะบรรทัดที่ Site Type ตรงกับในฟอร์ม
+                let actualSiteType = currentSiteType;
                 let matchedRows = matchedCids.filter(t => {
                     const st = getVal(t, ['sitetype', 'originate', 'terminate', 'site type']);
-                    return String(st).trim().toLowerCase() === form.siteType.trim().toLowerCase();
+                    return String(st).trim().toLowerCase() === currentSiteType.trim().toLowerCase();
                 });
 
-                let actualSiteType = form.siteType;
                 let isAutoSwitched = false;
 
-                // ถ้า CID นี้มีอยู่ แต่ไม่ใช่ Site Type ที่ผู้ใช้เลือกไว้ -> ให้เปลี่ยน Site Type ให้อัตโนมัติเลย
                 if (matchedRows.length === 0) {
                     actualSiteType = String(getVal(matchedCids[0], ['sitetype', 'originate', 'terminate', 'site type'])).trim() || 'Terminate';
                     matchedRows = matchedCids.filter(t => {
@@ -476,7 +492,6 @@
                 if (matchedRows.length > 0) {
                     const first = matchedRows[0];
                     
-                    // ทับข้อมูลเดิมทั้งหมดในช่องของลูกค้า
                     setForm(prev => ({
                         ...prev,
                         cid: getVal(first, ['circuitno', 'cid']) || prev.cid, 
@@ -487,10 +502,9 @@
                         cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก']) || '',
                         getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ']) || '',
                         getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา']) || '',
-                        details: '' // ล้าง details ป้องกันการปนเปื้อนข้อมูลเก่า
+                        details: '' 
                     }));
 
-                    // ดึงอุปกรณ์ทุกตัว (1-to-many) มาเรียงใหม่ ให้ SN ขึ้นก่อน
                     const equips = matchedRows.map(t => ({
                         name: getVal(t, ['itemname', 'อุปกรณ์']) || '',
                         serial: getVal(t, ['serialno', 'serial', 'sn']) || ''
@@ -508,12 +522,16 @@
                         setEquipments([{ name: '', serial: '' }]);
                     }
                     
-                    if (isAutoSwitched) {
-                        alert(`✅ ดึงข้อมูล CID: ${searchCid} สำเร็จ!\n(ระบบสลับ Site Type เป็น "${actualSiteType}" ให้อัตโนมัติ)\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
-                    } else {
-                        alert(`✅ ดึงข้อมูล CID: ${searchCid} (ประเภท: ${actualSiteType}) สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
+                    if (isAutoSwitched && !autoAssignData) {
+                        alert(`✅ ดึงข้อมูล CID: ${searchCidValue} สำเร็จ!\n(ระบบสลับ Site Type เป็น "${actualSiteType}" ให้อัตโนมัติ)\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
+                    } else if (!autoAssignData) {
+                        alert(`✅ ดึงข้อมูล CID: ${searchCidValue} (ประเภท: ${actualSiteType}) สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
                     }
                 }
+            };
+
+            const handleAutoFillClick = () => {
+                executeAutoFill(searchCid, form.siteType);
             };
 
             const handleDistrictInput = (e) => {
@@ -539,7 +557,7 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
-            // ปรับข้อความ LINE ไม่ให้มีคำว่า Site Type โชว์
+            // ตัด Site Type ออกจากกล่อง Line Message
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
@@ -663,7 +681,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                         <option value="Originate">Originate</option>
                                     </select>
                                 </div>
-                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition-colors whitespace-nowrap"><i className="fa-solid fa-cloud-arrow-down mr-1"></i> ดึงข้อมูล NS</button>
+                                <button onClick={handleAutoFillClick} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition-colors whitespace-nowrap"><i className="fa-solid fa-cloud-arrow-down mr-1"></i> ดึงข้อมูล NS</button>
                             </div>
                         </div>
                         
@@ -844,6 +862,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [columns, setColumns] = useState([]);
           const [nsColumns, setNsColumns] = useState([]); 
           const [hiddenColumns, setHiddenColumns] = useState([]); 
+          const [pinnedColumns, setPinnedColumns] = useState([]); 
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
@@ -851,6 +870,10 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [dashboardView, setDashboardView] = useState('subcontract'); 
           const [dashboardYear, setDashboardYear] = useState('overview'); 
           const [tasksSubTab, setTasksSubTab] = useState('subcontract'); 
+
+          // --- Pagination States ---
+          const [currentPage, setCurrentPage] = useState(1);
+          const [rowsPerPage, setRowsPerPage] = useState(100);
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -874,7 +897,31 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [queueState, setQueueState] = useState({});
           
           const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
-          const timeoutRef = useRef(null);
+          const [isPendingTransition, startTransition] = useTransition();
+
+          const [autoAssignData, setAutoAssignData] = useState(null);
+
+          // Reset pagination when filters change
+          useEffect(() => {
+              setCurrentPage(1);
+          }, [tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, searchTerm]);
+
+          const handleDirectAssign = (cid, siteType) => {
+              if(!cid || cid.trim() === '') return alert('ไม่พบข้อมูล CIDs ในรายการนี้');
+              setAutoAssignData({ cid, siteType: siteType || 'Terminate' });
+              startTransition(() => {
+                  setActiveTab('assign');
+              });
+              if (window.innerWidth <= 1024) setIsSidebarOpen(false);
+          };
+
+          const clearAutoAssignData = () => {
+              setAutoAssignData(null);
+          };
+
+          const handlePinToggle = (col) => {
+              setPinnedColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+          };
 
           useEffect(() => {
               setIsLoading(true); setFirebaseError(null);
@@ -897,7 +944,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   }
               });
 
-              // ดึงงาน Subcontract
               const unsubscribeTasks = collectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) return;
                   
@@ -972,27 +1018,24 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-                  const delayTime = 100; 
-                  
-                  clearTimeout(timeoutRef.current);
-                  timeoutRef.current = setTimeout(() => {
-                      if (isSyncingStatus) {
-                          setIsBackgroundSyncing(true);
-                      } else {
-                          setIsBackgroundSyncing(false);
-                          setTasks(validTasks); 
-                          setFirebaseError(null); 
-                          
-                          if (metadataCols && Array.isArray(metadataCols)) {
-                              setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
-                          } else if (allCols.size > columns.length) {
-                              const colsArray = Array.from(allCols);
-                              setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
-                          }
-                          localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
-                          setIsLoading(false);
+                  if (isSyncingStatus) {
+                      setIsBackgroundSyncing(true);
+                  } else {
+                      setIsBackgroundSyncing(false);
+                      startTransition(() => {
+                          setTasks(validTasks);
+                      });
+                      setFirebaseError(null); 
+                      
+                      if (metadataCols && Array.isArray(metadataCols)) {
+                          setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
+                      } else if (allCols.size > columns.length) {
+                          const colsArray = Array.from(allCols);
+                          setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
                       }
-                  }, delayTime);
+                      localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
+                      setIsLoading(false);
+                  }
                   
               }, (error) => {
                   console.error("Firestore Error:", error); setFirebaseError(`Firebase Error: ${error.message}`);
@@ -1035,20 +1078,24 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-                  setTimeout(() => {
+                  startTransition(() => {
                       setNsTasks(validTasks); 
-                      if (metadataCols && Array.isArray(metadataCols)) { setNsColumns(metadataCols); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(metadataCols)); }
-                      else if (allCols.size > nsColumns.length) { const colsArray = Array.from(allCols); setNsColumns(colsArray); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(colsArray)); }
-                  }, 100);
+                  });
+                  if (metadataCols && Array.isArray(metadataCols)) { setNsColumns(metadataCols); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(metadataCols)); }
+                  else if (allCols.size > nsColumns.length) { const colsArray = Array.from(allCols); setNsColumns(colsArray); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(colsArray)); }
               });
 
               return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
           }, []);
 
-          // เลือกว่าจะโชว์คอลัมน์ของ Subcontract หรือ NS
           const currentColumns = tasksSubTab === 'subcontract' ? columns : nsColumns;
           const currentTasks = tasksSubTab === 'subcontract' ? tasks : nsTasks;
           
+          const visibleColumns = currentColumns.filter(col => !hiddenColumns.includes(col));
+          const pinnedColsList = visibleColumns.filter(c => pinnedColumns.includes(c));
+          const unpinnedColsList = visibleColumns.filter(c => !pinnedColumns.includes(c));
+          const orderedVisibleColumns = [...pinnedColsList, ...unpinnedColsList];
+
           const dashboardTasks = dashboardView === 'subcontract' ? tasks : nsTasks;
           const dashboardColumns = dashboardView === 'subcontract' ? columns : nsColumns;
 
@@ -1058,7 +1105,12 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   const colB = currentColumns.length > 1 ? currentColumns[1] : '';
                   const colC = currentColumns.length > 2 ? currentColumns[2] : '';
                   const colG = currentColumns.length > 6 ? currentColumns[6] : '';
-                  const statusCol = findCol(['สถานะ', 'status']) || currentColumns[currentColumns.length - 1] || '';
+                  
+                  const statusCol = currentColumns.find(c => {
+                      const lc = c?.toLowerCase().replace(/\s+/g, '') || '';
+                      return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change');
+                  }) || currentColumns[currentColumns.length - 1] || '';
+
                   const contactColName = findCol(['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ']);
                   const phoneColName = currentColumns.find(c => c !== contactColName && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
                   const timeColName = currentColumns.find(c => {
@@ -1101,6 +1153,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               setFilterMonth('All'); setFilterTeams([]); setSearchTerm(''); setTableFilterTeams([]);
               setTableFilterDate('All'); setTableFilterYear('All'); setTableFilterStatus('All');
               setTableFilterOverdue('All'); setSortConfig({ key: null, direction: null });
+              setCurrentPage(1);
           };
 
           const fallbackTeamColors = [ { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, { bg: '#ccfbf1', text: '#0f766e', border: '#99f6e4' }, { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe' }, { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' } ];
@@ -1113,11 +1166,9 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
           };
 
-          // อัปเกรดระบบรองรับการแก้ไขข้อมูลแบบกลุ่ม (Group Edit)
           const handleCellChange = async (taskObj, field, value) => {
               const docIds = taskObj._groupDocs || [taskObj.id];
               
-              // ป้องกันการแก้ไขคอลัมน์ชื่ออุปกรณ์/ซีเรียล ที่ถูกจับมัดรวมกันแล้ว
               const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
               const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
               if (docIds.length > 1 && (field === itemColMatch || field === snColMatch)) {
@@ -1188,10 +1239,9 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
           const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
 
-          const { date: dateCol, status: statusCol, team: teamCol, company: compCol, time: timeCol } = keyMap;
           const cidCol = dashboardColumns.find(c => c?.toLowerCase().includes('cid')) || '';
           const equipYearCol = dashboardColumns.find(c => c?.toLowerCase().includes('year') || c?.includes('ปี')) || '';
-          const noteCol = dashboardColumns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
+          const noteCol = currentColumns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
           const overDueCol = dashboardColumns.find(c => { const lowerC = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด'); }) || '';
           const getCollectionDateCol = () => dashboardColumns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
           const getTaskEffectiveDateStr = (t) => {
@@ -1200,7 +1250,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return dateStr;
           };
 
-          const uniqueTeams = teamCol ? [...new Set(dashboardTasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
+          const uniqueTeams = keyMap.team ? [...new Set(dashboardTasks.map(t => getCleanTeam(t[keyMap.team])))].sort() : [];
           
           const baseFilteredTasks = dashboardTasks.filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
@@ -1215,16 +1265,16 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               }
               if (dashboardYear === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardYear === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
               if (filterMonth !== 'All' && m !== parseInt(filterMonth)) matchMonth = false;
-              if (filterTeams.length > 0 && teamCol && !filterTeams.includes(getCleanTeam(t[teamCol]))) matchTeam = false;
+              if (filterTeams.length > 0 && keyMap.team && !filterTeams.includes(getCleanTeam(t[keyMap.team]))) matchTeam = false;
               return matchMonth && matchTeam && matchYearView;
           });
 
           const uniqueMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
           const uniqueColMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
           const uniqueCIDs = cidCol ? [...new Set(dashboardTasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueDates = dateCol ? [...new Set(dashboardTasks.map(t => t[dateCol] ? String(t[dateCol]).trim() : '').filter(Boolean))].sort() : [];
+          const uniqueDates = keyMap.date ? [...new Set(dashboardTasks.map(t => t[keyMap.date] ? String(t[keyMap.date]).trim() : '').filter(Boolean))].sort() : [];
           const uniqueYears = equipYearCol ? [...new Set(dashboardTasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueStatuses = statusCol ? [...new Set(dashboardTasks.map(t => getCleanStatus(t[statusCol])))].sort() : [];
+          const uniqueStatuses = keyMap.status ? [...new Set(dashboardTasks.map(t => getCleanStatus(t[keyMap.status])))].sort() : [];
 
           const getStatusColor = (status, opacity = 1) => {
               const s = status ? String(status).trim().toLowerCase() : '';
@@ -1243,11 +1293,11 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           };
 
           const toggleStatusFilter = (status) => { if (selectedStatuses.includes(status)) setSelectedStatuses(selectedStatuses.filter(s => s !== status)); else setSelectedStatuses([...selectedStatuses, status]); };
-          const chartFilteredTasks = baseFilteredTasks.filter(t => selectedStatuses.length === 0 || selectedStatuses.includes(getCleanStatus(t[statusCol])));
+          const chartFilteredTasks = baseFilteredTasks.filter(t => selectedStatuses.length === 0 || selectedStatuses.includes(getCleanStatus(t[keyMap.status])));
           const totalTasksCount = baseFilteredTasks.length;
           
           const statusCounts = {};
-          if (statusCol) baseFilteredTasks.forEach(t => { const s = getCleanStatus(t[statusCol]); statusCounts[s] = (statusCounts[s] || 0) + 1; });
+          if (keyMap.status) baseFilteredTasks.forEach(t => { const s = getCleanStatus(t[keyMap.status]); statusCounts[s] = (statusCounts[s] || 0) + 1; });
           const getStatusRank = (status) => {
               const s = String(status).trim().toLowerCase();
               if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
@@ -1258,7 +1308,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           };
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : statusCounts[b] - statusCounts[a]; });
           
-          const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[statusCol]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
+          const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[keyMap.status]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
           const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : chartStatusCounts[b] - chartStatusCounts[a]; });
           const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
           const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
@@ -1269,7 +1319,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               if (d) {
                   let m = d.getMonth() + 1;
                   if (m >= 1 && m <= 12) {
-                      const isCollected = getCleanStatus(t[statusCol]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
+                      const isCollected = getCleanStatus(t[keyMap.status]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
                       if (isCollected) monthlyData[m].collected++; else monthlyData[m].ongoing++;
                   }
               }
@@ -1277,9 +1327,9 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const monthlyChartData = { labels: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."], datasets: [ { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } ] };
           const monthlyChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
-          const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[statusCol])))];
-          const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[teamCol])))].sort();
-          const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[teamCol]) === team && getCleanStatus(t[statusCol]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
+          const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[keyMap.status])))];
+          const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[keyMap.team])))].sort();
+          const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[keyMap.team]) === team && getCleanStatus(t[keyMap.status]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
           const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
 
           const overdueByTeamCounts = {}; activeTeams.forEach(t => overdueByTeamCounts[t] = 0);
@@ -1287,80 +1337,101 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               const val = overDueCol ? getCleanStatus(t[overDueCol]) : '';
               if (val && val !== 'ไม่ระบุสถานะ') {
                   const m = val.match(/-?\d+/); const num = m ? parseInt(m[0], 10) : NaN;
-                  if (val.includes('เกิน') || val.includes('over') || num < 0) overdueByTeamCounts[getCleanTeam(t[teamCol])]++;
+                  if (val.includes('เกิน') || val.includes('over') || num < 0) overdueByTeamCounts[getCleanTeam(t[keyMap.team])]++;
               }
           });
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
-          // กรองข้อมูลตารางตาม Filter และยุบรวมข้อมูล NS แบบฉลาด
-          let tableTasks = [...currentTasks]; 
-          if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
-          if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
-          if (tableFilterYear !== 'All' && equipYearCol) tableTasks = tableTasks.filter(t => (t[equipYearCol] ? String(t[equipYearCol]).trim() : '') === tableFilterYear);
-          if (tableFilterStatus !== 'All' && statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[statusCol]) === tableFilterStatus);
-          if (tableFilterDate !== 'All') { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d && (d.getMonth() + 1).toString() === tableFilterDate; }); }
-          if (tableFilterOverdue !== 'All' && overDueCol) {
-              tableTasks = tableTasks.filter(t => {
-                  const cleanVal = getCleanStatus(t[overDueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
-                  const match = cleanVal.match(/-?\d+/); const num = match ? parseInt(match[0], 10) : NaN;
-                  const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
-                  const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
-                  if (tableFilterOverdue === 'เกินกำหนด') return isOverdue; if (tableFilterOverdue === 'ครบกำหนด') return isDue; return !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
-              });
-          }
-          if (sortConfig.key && sortConfig.direction) tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
-          if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
-          
-          // --- ระบบ Grouping รวบ Circuit NO. ที่ซ้ำให้เป็นแถวเดียว สำหรับตาราง NS ---
-          let processedTasks = tableTasks;
-          const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
-          const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
+          // --- ใช้ useMemo คำนวณตาราง และใส่ Pagination ---
+          const finalTableTasks = useMemo(() => {
+              let tableTasks = [...currentTasks]; 
+              
+              const getCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
+              const localTeamCol = getCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || (currentColumns.length > 1 ? currentColumns[1] : '');
+              const localCidCol = getCol(['cid', 'circuitno']) || '';
+              const localYearCol = getCol(['year', 'ปี']) || '';
+              const localStatusCol = currentColumns.find(c => {
+                  const lc = c?.toLowerCase().replace(/\s+/g, '') || '';
+                  return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change');
+              }) || currentColumns[currentColumns.length - 1] || '';
+              const localDateCol = getCol(['วันที่เข้าเก็บ']) || getCol(['วันที่', 'date']) || currentColumns[0];
+              const localOverdueCol = getCol(['นัดหมายลูกค้า', 'over3', 'เกินกำหนด']) || '';
 
-          if (tasksSubTab === 'ns') {
-              const grouped = new Map();
-              const cidColMatch = currentColumns.find(c => c?.toLowerCase().includes('circuit no') || c?.toLowerCase().includes('cid')) || '';
-              const siteTypeColMatch = currentColumns.find(c => c?.toLowerCase().includes('site type') || c?.toLowerCase().includes('sitetype') || c?.toLowerCase() === 'site') || '';
+              if (tableFilterTeams.length > 0 && localTeamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[localTeamCol])));
+              if (tableFilterCID !== 'All' && localCidCol) tableTasks = tableTasks.filter(t => (t[localCidCol] ? String(t[localCidCol]).trim() : '') === tableFilterCID);
+              if (tableFilterYear !== 'All' && localYearCol) tableTasks = tableTasks.filter(t => (t[localYearCol] ? String(t[localYearCol]).trim() : '') === tableFilterYear);
+              if (tableFilterStatus !== 'All' && localStatusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[localStatusCol]) === tableFilterStatus);
+              if (tableFilterDate !== 'All') { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(localDateCol ? t[localDateCol] : null); return d && (d.getMonth() + 1).toString() === tableFilterDate; }); }
+              if (tableFilterOverdue !== 'All' && localOverdueCol) {
+                  tableTasks = tableTasks.filter(t => {
+                      const cleanVal = getCleanStatus(t[localOverdueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
+                      const match = cleanVal.match(/-?\d+/); const num = match ? parseInt(match[0], 10) : NaN;
+                      const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
+                      const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
+                      if (tableFilterOverdue === 'เกินกำหนด') return isOverdue; if (tableFilterOverdue === 'ครบกำหนด') return isDue; return !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
+                  });
+              }
+              
+              if (sortConfig.key && sortConfig.direction) {
+                  tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
+              } else {
+                  tableTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
+              }
+              
+              if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
+              
+              let processedTasks = tableTasks;
+              
+              const itemColMatch = getCol(['itemname', 'อุปกรณ์']);
+              const snColMatch = getCol(['serialno', 'serial', 'sn']);
+              const siteTypeColMatch = getCol(['sitetype', 'site']);
 
-              processedTasks.forEach(t => {
-                  const cid = cidColMatch ? t[cidColMatch] : '';
-                  const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
-                  
-                  if (!cid || String(cid).trim() === '') {
-                      grouped.set(t.id, { ...t, _groupDocs: [t.id] });
-                      return;
-                  }
-                  
-                  const groupKey = `${cid}_${st}`.trim();
-                  if (!grouped.has(groupKey)) {
-                      grouped.set(groupKey, { 
-                          ...t, 
-                          _groupDocs: [t.id],
-                          _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
-                      });
-                  } else {
-                      const existing = grouped.get(groupKey);
-                      existing._groupDocs.push(t.id);
-                      existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
-                  }
-              });
+              if (tasksSubTab === 'ns') {
+                  const grouped = new Map();
+                  processedTasks.forEach(t => {
+                      const cid = localCidCol ? t[localCidCol] : '';
+                      const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
+                      
+                      if (!cid || String(cid).trim() === '') {
+                          grouped.set(t.id, { ...t, _groupDocs: [t.id] });
+                          return;
+                      }
+                      
+                      const groupKey = `${cid}_${st}`.trim();
+                      if (!grouped.has(groupKey)) {
+                          grouped.set(groupKey, { 
+                              ...t, 
+                              _groupDocs: [t.id],
+                              _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
+                          });
+                      } else {
+                          const existing = grouped.get(groupKey);
+                          existing._groupDocs.push(t.id);
+                          existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
+                      }
+                  });
 
-              // เรียงอุปกรณ์ (เอาตัวที่มี SN ขึ้นก่อน) แล้วนำกลับไปใส่คอลัมน์
-              processedTasks = Array.from(grouped.values()).map(group => {
-                  if (group._equipList && group._equipList.length > 0) {
-                      group._equipList.sort((a, b) => {
-                          const aHasSn = a.sn.trim() !== '' ? 1 : 0;
-                          const bHasSn = b.sn.trim() !== '' ? 1 : 0;
-                          return bHasSn - aHasSn; // เรียงจาก 1 ไป 0
-                      });
-                      if(itemColMatch) group[itemColMatch] = group._equipList.map(e => e.item).join('\n');
-                      if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
-                  }
-                  return group;
-              });
-          }
-          
-          const finalTableTasks = processedTasks;
+                  processedTasks = Array.from(grouped.values()).map(group => {
+                      if (group._equipList && group._equipList.length > 0) {
+                          group._equipList.sort((a, b) => {
+                              const aHasSn = a.sn.trim() !== '' ? 1 : 0;
+                              const bHasSn = b.sn.trim() !== '' ? 1 : 0;
+                              return bHasSn - aHasSn;
+                          });
+                          if(itemColMatch) group[itemColMatch] = group._equipList.map(e => e.item).join('\n');
+                          if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
+                      }
+                      return group;
+                  });
+              }
+              
+              return processedTasks;
+          }, [currentTasks, currentColumns, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, sortConfig, searchTerm]);
+
+          // --- Pagination Logic ---
+          const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil(finalTableTasks.length / rowsPerPage);
+          const paginatedTasks = rowsPerPage === 'All' ? finalTableTasks : finalTableTasks.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
           const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
           const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
@@ -1374,23 +1445,30 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
-              const targetCol = getCollectionDateCol();
-              return currentTasks.filter(t => isSameDate(targetCol ? t[targetCol] : null, dateObj)).sort((a, b) => {
-                  const sA = getCleanStatus(a[statusCol]).toLowerCase(), sB = getCleanStatus(b[statusCol]).toLowerCase();
+              
+              // ใช้ columns ของ Subcontract ตายตัว
+              const calStatusCol = columns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || columns[columns.length - 1] || '';
+              const calTeamCol = columns.find(c => c?.toLowerCase().includes('ทีม') || c?.toLowerCase().includes('subcontract') || c?.toLowerCase().includes('รับผิดชอบ')) || (columns.length > 1 ? columns[1] : '');
+              const calCompCol = columns.find(c => c?.toLowerCase().includes('บริษัท') || c?.toLowerCase().includes('ลูกค้า') || c?.toLowerCase().includes('site')) || (columns.length > 2 ? columns[2] : '');
+              const calTimeCol = columns.find(c => { const lc = c?.toLowerCase() || ''; return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time')); }) || (columns.length > 6 ? columns[6] : '');
+              const calDateCol = columns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || columns.find(c => c?.toLowerCase().includes('วันที่') || c?.toLowerCase().includes('date')) || columns[0];
+
+              return tasks.filter(t => isSameDate(calDateCol ? t[calDateCol] : null, dateObj)).sort((a, b) => {
+                  const sA = getCleanStatus(a[calStatusCol]).toLowerCase(), sB = getCleanStatus(b[calStatusCol]).toLowerCase();
                   const isDA = sA.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0; const isDB = sB.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0;
                   if (isDA !== isDB) return isDA - isDB; 
                   const pT = (str) => { const m = str.match(/(\d{1,2}):(\d{2})/); return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 9999; };
-                  return pT(a[timeCol] ? String(a[timeCol]).trim() : '') - pT(b[timeCol] ? String(b[timeCol]).trim() : '');
-              });
+                  return pT(a[calTimeCol] ? String(a[calTimeCol]).trim() : '') - pT(b[calTimeCol] ? String(b[calTimeCol]).trim() : '');
+              }).map(t => ({...t, _calStatusCol: calStatusCol, _calTeamCol: calTeamCol, _calCompCol: calCompCol, _calTimeCol: calTimeCol, _calDateCol: calDateCol}));
           };
+          
           const monthSlots = [...Array(getFirstDayOfMonth(currentDate.getFullYear(), currentDate.getMonth())).fill(null), ...Array.from({length: getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth())}, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1))];
           const weekSlots = Array.from({length: 7}, (_, i) => { const d = new Date(currentDate); d.setDate(d.getDate() - d.getDay() + i); return d; });
 
-          const visibleColumns = currentColumns.filter(col => !hiddenColumns.includes(col));
-          const skipColsInTooltip = [ compCol, teamCol, timeCol, dateCol, getCollectionDateCol(), ...currentColumns.filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
+          const skipColsInTooltip = [ keyMap.company, keyMap.team, keyMap.time, keyMap.date, ...currentColumns.filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
 
           const SidebarItem = ({ iconClass, label, id }) => (
-            <button onClick={() => { setActiveTab(id); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+            <button onClick={() => { startTransition(() => { setActiveTab(id); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
               <i className={`${iconClass} text-lg w-6 text-center ${activeTab === id ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">{label}</span>
             </button>
           );
@@ -1410,30 +1488,30 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 </div>
                 <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
                   <div className="space-y-1">
-                    <button onClick={() => { setActiveTab('dashboard'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+                    <button onClick={() => { startTransition(() => { setActiveTab('dashboard'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
                       <i className={`fa-solid fa-chart-pie text-lg w-6 text-center ${activeTab === 'dashboard' ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">ภาพรวม (Dashboard)</span>
                     </button>
                     {activeTab === 'dashboard' && isSidebarOpen && (
                         <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
                             <p className="text-[10px] text-slate-400 font-bold mb-1 mt-1">เลือกฐานข้อมูล:</p>
-                            <button onClick={() => { setDashboardView('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Subcontract</button>
-                            <button onClick={() => { setDashboardView('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- NS Tasks</button>
+                            <button onClick={() => { startTransition(() => setDashboardView('subcontract')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Subcontract</button>
+                            <button onClick={() => { startTransition(() => setDashboardView('ns')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- NS Tasks</button>
                             
                             <p className="text-[10px] text-slate-400 font-bold mb-1 mt-2">เลือกปี:</p>
-                            <button onClick={() => { setDashboardYear('overview'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
-                            <button onClick={() => { setDashboardYear('2026'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === '2026' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
-                            <button onClick={() => { setDashboardYear('history'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'history' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2018 - 2025</button>
+                            <button onClick={() => { startTransition(() => setDashboardYear('overview')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
+                            <button onClick={() => { startTransition(() => setDashboardYear('2026')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === '2026' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
+                            <button onClick={() => { startTransition(() => setDashboardYear('history')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'history' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2018 - 2025</button>
                         </div>
                     )}
                   </div>
                   <div className="space-y-1">
-                    <button onClick={() => { setActiveTab('tasks'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tasks' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+                    <button onClick={() => { startTransition(() => { setActiveTab('tasks'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tasks' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
                       <i className={`fa-solid fa-table-list text-lg w-6 text-center ${activeTab === 'tasks' ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">ตารางงาน (All Data)</span>
                     </button>
                     {activeTab === 'tasks' && isSidebarOpen && (
                         <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
-                            <button onClick={() => { setTasksSubTab('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
-                            <button onClick={() => { setTasksSubTab('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
+                            <button onClick={() => { startTransition(() => { setTasksSubTab('subcontract'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
+                            <button onClick={() => { startTransition(() => { setTasksSubTab('ns'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
                         </div>
                     )}
                   </div>
@@ -1446,15 +1524,15 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   </div>
                 </nav>
                 <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium shrink-0">
-                  <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
-                  {isLoading || isBackgroundSyncing ? <span className="text-blue-500 font-bold">Syncing with Sheet...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
+                  <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing || isPendingTransition ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
+                  {isLoading || isBackgroundSyncing || isPendingTransition ? <span className="text-blue-500 font-bold">Syncing with Sheet...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
                 </div>
               </aside>
 
-              <main className="flex-1 relative w-full h-full overflow-hidden bg-slate-50 min-h-0">
+              <main className={`flex-1 relative w-full h-full overflow-hidden bg-slate-50 min-h-0 transition-opacity duration-200 ${isPendingTransition ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                 {/* --- 1. DASHBOARD --- */}
                 {activeTab === 'dashboard' && (
-                  <div className="absolute inset-0 flex flex-col p-4 md:p-8 animate-in fade-in duration-500 overflow-y-auto custom-scrollbar">
+                  <div className="absolute inset-0 flex flex-col p-4 md:p-8 overflow-y-auto custom-scrollbar">
                     <div className="max-w-7xl mx-auto w-full space-y-6">
                       <header className="mb-4 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                         <div>
@@ -1519,7 +1597,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                 {/* --- 2. หน้าตารางงาน --- */}
                 {activeTab === 'tasks' && (
-                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 animate-in fade-in duration-500 overflow-hidden bg-slate-50 min-h-0">
+                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 overflow-hidden bg-slate-50 min-h-0">
                     <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block"><i className="fa-solid fa-bars"></i></button>
@@ -1538,10 +1616,10 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         </div>
                         <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-3 border-t border-slate-100">
                             <span className="text-xs md:text-sm font-semibold text-slate-600 hidden md:inline-block"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
-                            {teamCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>}
-                            {dateCol && <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">เดือน (ทั้งหมด)</option>{uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}</select>}
+                            {keyMap.team && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>}
+                            {keyMap.date && <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">เดือน (ทั้งหมด)</option>{uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}</select>}
                             {equipYearCol && <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">ปี (ทั้งหมด)</option>{uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}</select>}
-                            {statusCol && <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>}
+                            {keyMap.status && <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>}
                             {overDueCol && <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">นัดหมายลูกค้า (ทั้งหมด)</option><option value="ครบกำหนด">ครบกำหนด (0 วัน)</option><option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option><option value="เกินกำหนด">เกินกำหนด (เกิน...)</option></select>}
                             <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={currentColumns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
                         </div>
@@ -1550,34 +1628,67 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden relative">
                       <div className="flex-1 overflow-auto table-container">
                         <table className="w-full text-left border-collapse text-sm relative" style={{ tableLayout: 'auto' }}>
-                          <thead className="bg-slate-800 shadow-sm shadow-slate-800/50 sticky top-0 z-30">
+                          <thead className="bg-slate-800 shadow-sm shadow-slate-800/50 sticky top-0 z-40">
                             <tr>
-                              {visibleColumns.length > 0 ? visibleColumns.map((col, idx) => {
+                              {orderedVisibleColumns.length > 0 ? orderedVisibleColumns.map((col, idx) => {
                                   const hasFixedWidth = colWidths[col] !== undefined;
+                                  const isPinned = pinnedColumns.includes(col);
+                                  const isFirstPinned = isPinned && idx === 0;
+                                  const thClass = isFirstPinned ? 'sticky-col-header bg-slate-800' : 'bg-slate-800 border-r border-slate-700 hover:bg-slate-700';
+
                                   return (
-                                      <th key={idx} className="bg-slate-800 border-r border-slate-700 p-0 align-middle relative group hover:bg-slate-700 transition-colors select-none sortable-header sticky top-0 z-30" style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }} onClick={() => handleSort(col)}>
-                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full"><div className="th-content text-xs md:text-sm font-semibold text-white">{col}</div><div className="ml-2 text-white opacity-70">{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}</div></div>
+                                      <th key={idx} className={`p-0 align-middle relative group transition-colors select-none sortable-header ${thClass}`} style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }} onClick={() => handleSort(col)}>
+                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
+                                            <div className="flex items-center gap-2">
+                                                <div className="th-content text-xs md:text-sm font-semibold text-white">{col}</div>
+                                                <button onClick={(e) => { e.stopPropagation(); handlePinToggle(col); }} className={`hover:scale-110 transition-transform ${isPinned ? 'text-blue-400' : 'text-slate-500 hover:text-white'}`} title="ตรึงคอลัมน์">
+                                                    <i className="fa-solid fa-thumbtack text-[10px]"></i>
+                                                </button>
+                                            </div>
+                                            <div className="ml-2 text-white opacity-70">{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}</div>
+                                          </div>
                                           <div onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, col); }} onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickResize(col); }} className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"><div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div></div>
                                       </th>
                                   );
                               }) : <th className="p-4 text-white sticky top-0 bg-slate-800 z-30">ตารางงาน</th>}
+                              
+                              {/* คอลัมน์พิเศษสำหรับปุ่มจ่ายงาน (แสดงเฉพาะฝั่ง NS) */}
+                              {tasksSubTab === 'ns' && <th className="bg-slate-800 border-l border-slate-700 p-0 align-middle sticky right-0 z-40 w-20 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.2)]"><div className="px-2 py-2 text-center text-xs md:text-sm font-semibold text-white"><i className="fa-solid fa-bolt text-amber-400"></i> จ่ายงาน</div></th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
-                            {isLoading ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
-                            : currentTasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า</td></tr>
-                            : finalTableTasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูล...</td></tr>
-                            : finalTableTasks.map((task) => (
-                              <tr key={task.id} className={`transition-colors ${isBackgroundSyncing ? 'opacity-70 pointer-events-none' : 'hover:bg-slate-50'}`}>
-                                {visibleColumns.map((col, idx) => {
+                            {isLoading ? <tr><td colSpan={Math.max(orderedVisibleColumns.length + 1, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
+                            : currentTasks.length === 0 ? <tr><td colSpan={Math.max(orderedVisibleColumns.length + 1, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า</td></tr>
+                            : finalTableTasks.length === 0 ? <tr><td colSpan={Math.max(orderedVisibleColumns.length + 1, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูล...</td></tr>
+                            : paginatedTasks.map((task) => (
+                              <tr key={task.id} className={`transition-colors tr-hover ${isBackgroundSyncing ? 'opacity-70 pointer-events-none' : 'hover:bg-slate-50'}`}>
+                                {orderedVisibleColumns.map((col, idx) => {
                                     const hasFixedWidth = colWidths[col] !== undefined;
-                                    const isStatusCell = col === statusCol, isTeamCell = col === teamCol, isOverDueCell = col === overDueCol; 
                                     
+                                    const getCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
+                                    const localStatusCol = currentColumns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || currentColumns[currentColumns.length - 1] || '';
+                                    const localTeamCol = getCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || (currentColumns.length > 1 ? currentColumns[1] : '');
+                                    const localOverdueCol = getCol(['นัดหมายลูกค้า', 'over3', 'เกินกำหนด']) || '';
+
+                                    const isStatusCell = col === localStatusCol;
+                                    const isTeamCell = col === localTeamCol;
+                                    const isOverDueCell = col === localOverdueCol; 
+                                    
+                                    const statusChangeColMatch = currentColumns.find(c => c?.toLowerCase() === 'status_change' || c?.toLowerCase() === 'status change' || c?.toLowerCase() === 'status-change') || '';
+                                    const contactJobColMatch = currentColumns.find(c => c?.toLowerCase().includes('customer contact from job') || c?.toLowerCase().includes('customer contact')) || '';
+
+                                    const isStatusChangeCell = col === statusChangeColMatch;
+                                    const isContactJobCell = col === contactJobColMatch;
+
                                     const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
                                     const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
                                     const isGroupedMultiLine = task._groupDocs && task._groupDocs.length > 1 && (col === itemColMatch || col === snColMatch);
                                     
-                                    const val = task[col] || '', cleanVal = getCleanStatus(val), cellId = `${task.id}-${col}`, isEditing = editingCell === cellId;
+                                    const val = task[col] || '';
+                                    const cleanVal = getCleanStatus(val);
+                                    const cellId = `${task.id}-${col}`;
+                                    const isEditing = editingCell === cellId;
+                                    
                                     let styleObj = {};
                                     
                                     if (isStatusCell) {
@@ -1589,32 +1700,101 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                         if (cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0) styleObj = { backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                         else if (num === 0 || cleanVal.includes('ครบกำหนด') || cleanVal === '0') styleObj = { backgroundColor: '#fef08a', color: '#854d0e', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' }; 
                                         else if (num > 0 || cleanVal.includes('เหลือ')) styleObj = { backgroundColor: '#dcfce7', color: '#14532d', fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                    } else if (isStatusChangeCell && cleanVal !== 'ไม่ระบุสถานะ' && cleanVal !== '') {
+                                        styleObj = { backgroundColor: '#fff7ed', color: '#b45309', fontWeight: '600', borderRadius: '4px', border: '1px solid #fef08a', display: 'inline-block', padding: '2px 6px' };
                                     }
 
-                                    const tdWhiteSpace = isGroupedMultiLine ? 'pre-wrap' : 'nowrap';
+                                    let tdStyle = { verticalAlign: 'top' };
+                                    if (hasFixedWidth) {
+                                        tdStyle = { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col], verticalAlign: 'top' };
+                                    } else {
+                                        if (isStatusChangeCell || isContactJobCell) {
+                                            tdStyle.maxWidth = '250px';
+                                        }
+                                    }
+
+                                    let tdWhiteSpace = 'nowrap';
+                                    let tdWordBreak = 'normal';
+                                    let tdOverflow = 'hidden';
+
+                                    if (isGroupedMultiLine) {
+                                        tdWhiteSpace = 'pre-wrap';
+                                        tdWordBreak = 'break-word';
+                                        tdOverflow = 'auto';
+                                    } else if ((isStatusChangeCell || isContactJobCell) && !hasFixedWidth) {
+                                        tdWhiteSpace = 'normal';
+                                        tdWordBreak = 'break-word';
+                                        tdOverflow = 'visible';
+                                    }
+
                                     const textAlignment = isGroupedMultiLine ? 'left' : (isTeamCell || isStatusCell || isOverDueCell ? 'center' : 'left');
 
+                                    const isPinned = pinnedColumns.includes(col);
+                                    const isFirstPinned = isPinned && idx === 0;
+                                    const tdClass = isFirstPinned ? 'sticky-col-cell border-r border-slate-100' : 'border-r border-slate-100 bg-white';
+
+                                    let cellClasses = `px-2 md:px-3 py-1 outline-none editable-cell ${isEditing ? 'editing text-slate-800' : ''}`;
+                                    if (isGroupedMultiLine) cellClasses += ' cell-scrollbar';
+
                                     return (
-                                        <td key={idx} className="p-1 md:p-1.5 border-r border-slate-100" style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col], verticalAlign: 'top' } : { verticalAlign: 'top' }}>
+                                        <td key={idx} className={`p-1 md:p-1.5 align-middle ${tdClass}`} style={tdStyle}>
                                             {isStatusCell ? (
                                                 <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
                                                     <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
                                                     <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer"><i className="fa-solid fa-chevron-down text-[10px]"></i><select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task, col, e.target.value); }}><option value="" disabled></option>{uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                                                 </div>
                                             ) : (
-                                                <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`px-2 md:px-3 py-1 outline-none editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer', whiteSpace: tdWhiteSpace, wordBreak: isGroupedMultiLine ? 'break-all' : 'normal', textAlign: textAlignment, lineHeight: isGroupedMultiLine ? '1.8' : '20px', overflow: isGroupedMultiLine ? 'visible' : 'hidden', textOverflow: isGroupedMultiLine ? 'clip' : 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
+                                                <div contentEditable={isEditing} suppressContentEditableWarning={true} className={cellClasses} style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer', whiteSpace: tdWhiteSpace, wordBreak: tdWordBreak, textAlign: textAlignment, lineHeight: isGroupedMultiLine ? '1.8' : '20px', overflow: tdOverflow, textOverflow: isGroupedMultiLine ? 'clip' : 'ellipsis', maxHeight: isGroupedMultiLine ? '120px' : 'none' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
                                             )}
                                         </td>
-                                    )
+                                    );
                                 })}
+                                
+                                {/* ปุ่มจ่ายงานด่วน (โชว์เฉพาะแท็บ NS) */}
+                                {tasksSubTab === 'ns' && (() => {
+                                    const cidColMatch = currentColumns.find(c => c?.toLowerCase().includes('circuit no') || c?.toLowerCase().includes('cid')) || '';
+                                    const siteTypeColMatch = currentColumns.find(c => c?.toLowerCase().includes('site type') || c?.toLowerCase().includes('sitetype') || c?.toLowerCase() === 'site') || '';
+                                    return (
+                                        <td className="p-1 align-middle border-l border-slate-200 bg-slate-50 sticky right-0 z-10 text-center shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
+                                            <button onClick={() => handleDirectAssign(task[cidColMatch], task[siteTypeColMatch])} className="w-full h-full min-h-[32px] px-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 rounded-md text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1 group" title="คลิกเพื่อส่ง CID นี้ไปหน้าจ่ายงาน (Assign Job)">
+                                                <span className="hidden md:inline">🚀 จ่ายงาน</span> <i className="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                                            </button>
+                                        </td>
+                                    );
+                                })()}
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex items-center justify-between z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                          <div className="text-xs md:text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm"><i className="fa-solid fa-list-check"></i>แสดงผลทั้งหมด {finalTableTasks.length} รายการ</div>
-                          <div className="text-[10px] md:text-xs text-slate-400 hidden sm:block">ดับเบิ้ลคลิกเพื่อแก้ไขข้อมูล (ซิงค์ไปที่ Firebase โดยตรง)</div>
+                      
+                      {/* Pagination UI */}
+                      <div className="shrink-0 bg-slate-50 border-t border-slate-200 p-2 md:p-3 px-3 md:px-5 flex flex-col sm:flex-row items-center justify-between z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] gap-3">
+                          <div className="text-xs md:text-sm font-semibold text-blue-700 flex items-center gap-2 bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm w-full sm:w-auto justify-center"><i className="fa-solid fa-list-check"></i>แสดงผลทั้งหมด {finalTableTasks.length} รายการ</div>
+                          
+                          <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+                              <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-500">แสดงหน้าละ:</span>
+                                  <select 
+                                      value={rowsPerPage} 
+                                      onChange={(e) => { setRowsPerPage(e.target.value === 'All' ? 'All' : Number(e.target.value)); setCurrentPage(1); }}
+                                      className="border border-slate-300 rounded px-2 py-1 text-xs text-slate-700 bg-white outline-none focus:border-blue-500 cursor-pointer shadow-sm"
+                                  >
+                                      <option value={20}>20</option>
+                                      <option value={50}>50</option>
+                                      <option value={100}>100</option>
+                                      <option value="All">ทั้งหมด</option>
+                                  </select>
+                              </div>
+                              
+                              {totalPages > 1 && (
+                                  <div className="flex items-center gap-2">
+                                      <span className="text-xs text-slate-500 hidden sm:block mr-2">หน้า {currentPage} จาก {totalPages}</span>
+                                      <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-md text-xs font-semibold disabled:opacity-50 transition-colors"><i className="fa-solid fa-chevron-left sm:mr-1"></i><span className="hidden sm:inline"> ก่อนหน้า</span></button>
+                                      <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-md text-xs font-semibold disabled:opacity-50 transition-colors"><span className="hidden sm:inline">ถัดไป </span><i className="fa-solid fa-chevron-right sm:ml-1"></i></button>
+                                  </div>
+                              )}
+                          </div>
                       </div>
                     </div>
                   </div>
@@ -1622,7 +1802,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                 {/* --- 3. หน้าปฏิทิน --- */}
                 {activeTab === 'calendar' && (
-                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 animate-in fade-in duration-500 overflow-hidden bg-slate-50 min-h-0">
+                  <div className="absolute inset-0 flex flex-col p-2 md:p-4 lg:p-6 overflow-hidden bg-slate-50 min-h-0">
                     <header className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-4">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block">
@@ -1684,18 +1864,18 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                           </div>
                                           <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1 md:space-y-1.5 min-h-0">
                                             {dayTasks.map(t => {
-                                                const border = getStatusColor(t[statusCol] || '', 1);
-                                                const softBg = getStatusColor(t[statusCol] || '', 0.1);
-                                                const colDate = getCollectionDateCol() ? t[getCollectionDateCol()] : (t[keyMap.date] || '-');
-                                                const colTime = t[keyMap.time] || '-';
+                                                const border = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 1);
+                                                const softBg = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 0.1);
+                                                const colDate = t._calDateCol ? t[t._calDateCol] : '-';
+                                                const colTime = t._calTimeCol ? t[t._calTimeCol] : '-';
                                                 
                                                 return (
                                                   <div key={t.id} style={{borderLeftColor: border}} className="p-1.5 md:p-2 rounded-lg md:rounded-xl border border-l-2 md:border-l-4 shadow-sm bg-white text-[9px] md:text-xs space-y-1 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 1024) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
                                                     {/* ทีม */}
-                                                    <div className="text-slate-500 font-semibold truncate mb-0.5 text-[8px] md:text-[10px]">ทีม: {t[keyMap.team] || '-'}</div>
+                                                    <div className="text-slate-500 font-semibold truncate mb-0.5 text-[8px] md:text-[10px]">ทีม: {t._calTeamCol ? t[t._calTeamCol] : '-'}</div>
                                                     
                                                     {/* บริษัทลูกค้า */}
-                                                    <div className="font-bold text-slate-800 leading-tight line-clamp-2" title={t[keyMap.company]}>{t[keyMap.company] || 'ไม่ระบุชื่อ'}</div>
+                                                    <div className="font-bold text-slate-800 leading-tight line-clamp-2" title={t._calCompCol ? t[t._calCompCol] : 'ไม่ระบุชื่อ'}>{t._calCompCol ? t[t._calCompCol] : 'ไม่ระบุชื่อ'}</div>
                                                     
                                                     {/* วันที่และเวลา */}
                                                     <div className="flex items-center gap-1 text-slate-600 font-medium text-[8px] md:text-[10px] mt-0.5 flex-wrap">
@@ -1705,7 +1885,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                                     
                                                     {/* Status */}
                                                     <div className="mt-1 text-center font-bold px-1 py-0.5 rounded border text-[8px] md:text-[10px] truncate" style={{backgroundColor: softBg, color: border, borderColor: border}}>
-                                                        {t[statusCol] || 'ไม่มีสถานะ'}
+                                                        {t._calStatusCol ? t[t._calStatusCol] : 'ไม่มีสถานะ'}
                                                     </div>
                                                   </div>
                                                 );
@@ -1748,19 +1928,19 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                     <div key={`w-${idx}`} className="bg-white p-1 md:p-2 flex flex-col gap-1.5 md:gap-2 bg-slate-50/30 border-r border-b border-slate-200 h-full overflow-hidden min-h-0">
                                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 space-y-1.5 min-h-0">
                                             {dayTasks.map(t => {
-                                                const border = getStatusColor(t[statusCol] || '', 1);
-                                                const softBg = getStatusColor(t[statusCol] || '', 0.1);
+                                                const border = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 1);
+                                                const softBg = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 0.1);
                                                 
-                                                const colDate = getCollectionDateCol() ? t[getCollectionDateCol()] : (t[keyMap.date] || '-');
-                                                const colTime = t[keyMap.time] || '-';
+                                                const colDate = t._calDateCol ? t[t._calDateCol] : '-';
+                                                const colTime = t._calTimeCol ? t[t._calTimeCol] : '-';
 
                                                 return (
                                                   <div key={t.id} style={{borderLeftColor: border}} className="p-1.5 md:p-3 rounded-lg md:rounded-xl border border-l-2 md:border-l-4 shadow-sm bg-white text-[10px] md:text-xs space-y-1 md:space-y-1.5 cursor-pointer hover:shadow-md transition-shadow" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave} onClick={() => { if(window.innerWidth <= 1024) { setCalendarView('day'); setCurrentDate(dateObj); } }}>
                                                     {/* 1. ทีมงาน */}
-                                                    <div className="text-slate-500 font-semibold truncate mb-0.5">ทีม: {t[keyMap.team] || '-'}</div>
+                                                    <div className="text-slate-500 font-semibold truncate mb-0.5">ทีม: {t._calTeamCol ? t[t._calTeamCol] : '-'}</div>
                                                     
                                                     {/* 2. ชื่อบริษัทลูกค้า */}
-                                                    <div className="font-bold text-slate-800 break-words leading-tight line-clamp-2">{t[keyMap.company] || 'ไม่ระบุชื่อ'}</div>
+                                                    <div className="font-bold text-slate-800 break-words leading-tight line-clamp-2">{t._calCompCol ? t[t._calCompCol] : 'ไม่ระบุชื่อ'}</div>
                                                     
                                                     {/* 3. วันและเวลาที่เข้าเก็บ */}
                                                     <div className="flex items-center gap-1 text-slate-600 font-medium px-1 py-0.5 rounded text-[8px] md:text-[10px] w-fit mt-1">
@@ -1768,7 +1948,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                                     </div>
                                                     
                                                     {/* 4. Status */}
-                                                    <div className="mt-1.5 text-center font-bold px-1 md:px-2 py-0.5 md:py-1 rounded-md md:rounded-lg border text-[8px] md:text-[10px]" style={{backgroundColor: softBg, color: border, borderColor: border}}>{t[statusCol]}</div>
+                                                    <div className="mt-1.5 text-center font-bold px-1 md:px-2 py-0.5 md:py-1 rounded-md md:rounded-lg border text-[8px] md:text-[10px]" style={{backgroundColor: softBg, color: border, borderColor: border}}>{t._calStatusCol ? t[t._calStatusCol] : 'ไม่มีสถานะ'}</div>
                                                   </div>
                                                 )
                                             })}
@@ -1798,18 +1978,17 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 ) : (
                                   <div className="space-y-3 md:space-y-4">
                                     {dayTasks.map(t => {
-                                        const bgColor = getStatusColor(t[statusCol] || '', 1);
-                                        const softBg = getStatusColor(t[statusCol] || '', 0.1);
+                                        const bgColor = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 1);
+                                        const softBg = getStatusColor(t._calStatusCol ? t[t._calStatusCol] : '', 0.1);
                                         
                                         const cidVal = cidCol ? t[cidCol] : '';
-                                        const companyVal = t[keyMap.company] || '-';
+                                        const companyVal = t._calCompCol ? t[t._calCompCol] : '-';
                                         
                                         const contactVal = (keyMap.contactName && t[keyMap.contactName]) ? t[keyMap.contactName] : 'ไม่ระบุ';
                                         const phoneVal = (keyMap.phone && t[keyMap.phone]) ? t[keyMap.phone] : '';
                                         
-                                        const collDateCol = getCollectionDateCol();
-                                        const collectionDateVal = collDateCol ? t[collDateCol] : (t[keyMap.date] || '-');
-                                        const collectionTimeVal = t[keyMap.time] || '-';
+                                        const collectionDateVal = t._calDateCol ? t[t._calDateCol] : '-';
+                                        const collectionTimeVal = t._calTimeCol ? t[t._calTimeCol] : '-';
                                         
                                         return (
                                           <div key={t.id} className="flex bg-white rounded-xl md:rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer relative" onMouseMove={(e) => handleMouseMove(e, t)} onMouseLeave={handleMouseLeave}>
@@ -1824,8 +2003,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                                         {/* 1. ทีมงาน */}
                                                         <div className="flex flex-col justify-center items-start shrink-0 lg:pr-4 lg:border-r border-slate-200">
                                                             <p className="text-[10px] md:text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">ทีมงาน</p>
-                                                            <div className="px-2 py-1 md:py-1.5 rounded-md text-sm md:text-base font-bold border w-24 md:w-32 text-center truncate shadow-sm" style={{ backgroundColor: getTeamColorStyle(t[keyMap.team]).bg, color: getTeamColorStyle(t[keyMap.team]).text, borderColor: getTeamColorStyle(t[keyMap.team]).border }} title={t[keyMap.team] || 'ไม่ระบุทีม'}>
-                                                                {t[keyMap.team] || 'ไม่ระบุทีม'}
+                                                            <div className="px-2 py-1 md:py-1.5 rounded-md text-sm md:text-base font-bold border w-24 md:w-32 text-center truncate shadow-sm" style={{ backgroundColor: getTeamColorStyle(t._calTeamCol ? t[t._calTeamCol] : '').bg, color: getTeamColorStyle(t._calTeamCol ? t[t._calTeamCol] : '').text, borderColor: getTeamColorStyle(t._calTeamCol ? t[t._calTeamCol] : '').border }} title={t._calTeamCol ? t[t._calTeamCol] : 'ไม่ระบุทีม'}>
+                                                                {t._calTeamCol ? t[t._calTeamCol] : 'ไม่ระบุทีม'}
                                                             </div>
                                                         </div>
 
@@ -1864,7 +2043,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                                     {/* 5. Status */}
                                                     <div className="flex justify-start lg:justify-end mt-2 lg:mt-0 shrink-0 border-t lg:border-t-0 lg:border-l border-slate-200 pt-3 lg:pt-0 lg:pl-4">
                                                         <span style={{backgroundColor: softBg, color: bgColor, borderColor: bgColor}} className="font-bold px-4 md:px-6 py-1.5 md:py-2 rounded-lg md:rounded-xl border-2 text-center min-w-[120px] md:min-w-[140px] shadow-sm">
-                                                            {t[statusCol] || 'ไม่มีสถานะ'}
+                                                            {t._calStatusCol ? t[t._calStatusCol] : 'ไม่มีสถานะ'}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -1894,14 +2073,14 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 {activeTab === 'master_data' && <MasterDataTab masterData={masterData} masterDataRef={masterDataRef} />}
 
                 {/* --- 5. หน้า ASSIGN JOB --- */}
-                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} nsTasks={nsTasks} />}
+                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} nsTasks={nsTasks} autoAssignData={autoAssignData} clearAutoAssignData={clearAutoAssignData} />}
 
               </main>
 
               {/* Tooltip Component */}
               {tooltipData.visible && tooltipData.task && (
                 <div className="fixed z-[9999] bg-white p-4 md:p-5 rounded-xl shadow-2xl border border-slate-200 w-[280px] md:w-80 pointer-events-none transition-opacity duration-150" style={{ left: tooltipData.x, top: tooltipData.y }}>
-                    <div className="flex justify-between items-start mb-3 border-b pb-2"><h4 className="font-bold text-slate-800 text-sm break-words pr-2">{tooltipData.task[compCol] || 'ไม่ระบุองค์กร'}</h4></div>
+                    <div className="flex justify-between items-start mb-3 border-b pb-2"><h4 className="font-bold text-slate-800 text-sm break-words pr-2">{tooltipData.task._calCompCol ? tooltipData.task[tooltipData.task._calCompCol] : tooltipData.task[compCol] || 'ไม่ระบุองค์กร'}</h4></div>
                     <div className="space-y-2 text-[11px] md:text-xs text-slate-600 max-h-[250px] overflow-y-auto pr-1 table-container">
                         {columns.map(col => {
                             if (skipColsInTooltip.includes(col)) return null;
