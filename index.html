@@ -5,27 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Equipment Collection Dashboard</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     
-    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 
-    <!-- Chart.js และ DataLabels -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 
@@ -402,21 +395,22 @@
         };
 
         // -------------------------------------------------------------
-        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY ---
+        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (พร้อมระบบ Magic Autofill) ---
         // -------------------------------------------------------------
-        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL }) => {
+        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks }) => {
             
             const getInitialFormState = () => {
                 const now = new Date();
                 return {
                     date: `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-                    cid: '', districtSearch: '', zoneId: '', team: '', customerName: '', address: '', phone: '', cancelDate: '', details: '', nextTeam: ''
+                    cid: '', siteType: 'Terminate', districtSearch: '', zoneId: '', team: '', customerName: '', address: '', phone: '', cancelDate: '', getbackDate: '', getbackTime: '', details: '', nextTeam: ''
                 };
             };
 
             const [form, setForm] = useState(getInitialFormState());
             const [equipments, setEquipments] = useState([{ name: '', serial: '' }]);
             const [isSending, setIsSending] = useState(false);
+            const [searchCid, setSearchCid] = useState(''); // สำหรับช่องค้นหาดึงข้อมูล NS
 
             const allDistrictsMap = useMemo(() => {
                 let map = [];
@@ -427,13 +421,68 @@
                 return map.sort((a,b) => a.name.localeCompare(b.name, 'th'));
             }, [masterData.zones]);
 
+            // หาค่าจาก Key หลายรูปแบบ (เพื่อป้องกันชื่อคอลัมน์ใน Sheet พิมพ์ไม่ตรงเป๊ะ)
+            const getVal = (t, keys) => {
+                const matchedKey = Object.keys(t).find(k => keys.some(kw => k.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,''))));
+                return matchedKey ? t[matchedKey] : '';
+            };
+
+            // สร้างรายการ CID ของ NS ทั้งหมดเพื่อทำ Auto-Complete ตอนพิมพ์ค้นหา
+            const nsCidOptions = useMemo(() => {
+                const cids = nsTasks.map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
+                return [...new Set(cids)];
+            }, [nsTasks]);
+
+            // --- ฟังก์ชันอัจฉริยะ (Magic Autofill) ---
+            const handleAutoFill = () => {
+                if (!searchCid.trim()) { alert("กรุณาพิมพ์เลข CIRCUIT NO. ที่ต้องการค้นหาครับ"); return; }
+                
+                // หาบรรทัดที่มี CID ตรงกับที่ค้นหา (ครอบคลุมตัวพิมพ์เล็ก/ใหญ่)
+                const matchedRows = nsTasks.filter(t => {
+                    const cid = getVal(t, ['circuitno', 'cid']);
+                    return String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
+                });
+
+                if (matchedRows.length > 0) {
+                    // ดึงข้อมูลพื้นฐานจากบรรทัดแรกที่เจอมาใส่ในฟอร์ม
+                    const first = matchedRows[0];
+                    let siteTypeVal = getVal(first, ['sitetype', 'originate', 'terminate']);
+                    if (!siteTypeVal || siteTypeVal.trim() === '') siteTypeVal = 'Terminate'; // ค่าเริ่มต้น
+
+                    setForm(prev => ({
+                        ...prev,
+                        cid: getVal(first, ['circuitno', 'cid']),
+                        siteType: siteTypeVal,
+                        customerName: getVal(first, ['customername', 'บริษัท']),
+                        address: getVal(first, ['address', 'ที่อยู่']),
+                        phone: getVal(first, ['customercontract', 'contract', 'เบอร์', 'phone']),
+                        cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก']),
+                        getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ']),
+                        getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา'])
+                    }));
+
+                    // ดึงรายการอุปกรณ์ทั้งหมดที่ซ้ำกันใน CID นี้ (1 CID -> หลายอุปกรณ์)
+                    const equips = matchedRows.map(t => ({
+                        name: getVal(t, ['itemname', 'อุปกรณ์']),
+                        serial: getVal(t, ['serialno', 'serial', 'sn'])
+                    })).filter(e => e.name || e.serial); // เอาเฉพาะบรรทัดที่มีชื่อหรือซีเรียล
+
+                    if (equips.length > 0) {
+                        setEquipments(equips);
+                    } else {
+                        setEquipments([{ name: '', serial: '' }]);
+                    }
+                    alert(`✅ ดึงข้อมูล CID: ${searchCid} สำเร็จ! (พบอุปกรณ์ ${equips.length} รายการ)`);
+                } else {
+                    alert(`❌ ไม่พบข้อมูล CID: "${searchCid}" ในฐานข้อมูล NS ครับ\nโปรดตรวจสอบตัวสะกดอีกครั้ง`);
+                }
+            };
+
             const handleDistrictInput = (e) => {
                 const val = e.target.value;
                 setForm(prev => ({...prev, districtSearch: val}));
                 const found = allDistrictsMap.find(d => d.name === val);
-                if (found) {
-                    handleZoneSelect(found.zoneId);
-                }
+                if (found) handleZoneSelect(found.zoneId);
             };
 
             const handleZoneSelect = (zoneId) => {
@@ -452,16 +501,19 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
+            // รูปแบบข้อความ LINE ใหม่ล่าสุดตามที่ผู้ใช้ขอ
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
  📅 วันที่/เวลาแจ้ง: ${form.date}
- CIDs: ${form.cid || '-'}
+ CIDs: ${form.cid || '-'}                      ${form.siteType}
+
  ผู้รับเหมา: ${form.team || '-'}
  บริษัทลูกค้า: ${form.customerName || '-'}
  ที่อยู่: ${form.address || '-'}
  เบอร์ติดต่อ: ${form.phone || '-'}
  วันที่ยกเลิกใช้งาน: ${form.cancelDate || '-'}
+ วันที่เข้าเก็บ: ${form.getbackDate || '-'}  เวลา  : ${form.getbackTime || '-'}
 
  รายละเอียดงาน: ${form.details || '-'}
 
@@ -488,7 +540,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         "_rowIndex": 999999
                     };
                     const equipStr = equipments.map(e => `${e.name || 'อุปกรณ์'} Serial Number : ${e.serial || '-'}`).join('\n');
-                    newTaskData["รายละเอียดงาน"] = `${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
+                    newTaskData["รายละเอียดงาน"] = `[Site Type: ${form.siteType}] \n[เข้าเก็บ: ${form.getbackDate || '-'} เวลา ${form.getbackTime || '-'}] \n\n${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
 
                     await collectionRef.doc(newTaskId).set(newTaskData);
 
@@ -512,6 +564,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     
                     setForm(getInitialFormState());
                     setEquipments([{ name: '', serial: '' }]);
+                    setSearchCid('');
 
                     if (GAS_WEB_APP_URL) {
                         const payloadData = JSON.stringify({ 
@@ -521,8 +574,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             tempTaskId: newTaskId 
                         });
                         fetch(GAS_WEB_APP_URL, {
-                            method: 'POST',
-                            mode: 'no-cors',
+                            method: 'POST', mode: 'no-cors',
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: payloadData
                         }).catch(e => console.error("Background sync to Sheet failed:", e));
@@ -546,24 +598,41 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
             return (
                 <div className="absolute inset-0 p-4 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-6">
-                    <div className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                        <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
+                    <div className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-4">
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
-                                <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอ (เลือกระบุอัตโนมัติ)</label>
+                        <div className="flex justify-between items-center border-b pb-2">
+                            <h2 className="text-xl font-bold text-slate-800"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
+                        </div>
+
+                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ */}
+                        <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl shadow-sm">
+                            <h3 className="text-sm font-bold text-indigo-800 mb-2"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i> ดึงข้อมูลอัตโนมัติจากฐานข้อมูล NS</h3>
+                            <div className="flex gap-2">
                                 <input 
                                     type="text" 
-                                    list="districts-list" 
-                                    placeholder="เช่น เขตพระนคร" 
-                                    value={form.districtSearch} 
-                                    onChange={handleDistrictInput} 
-                                    className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm outline-none focus:ring-2 focus:ring-amber-500" 
+                                    placeholder="พิมพ์ CIRCUIT NO. เพื่อค้นหาและดึงข้อมูล..." 
+                                    value={searchCid} 
+                                    onChange={e => setSearchCid(e.target.value)} 
+                                    className="flex-1 px-3 py-2 rounded-lg border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold" 
+                                    list="ns-cids-list" 
                                 />
+                                <datalist id="ns-cids-list">
+                                    {nsCidOptions.map((c, i) => <option key={i} value={c} />)}
+                                </datalist>
+                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap">ดึงข้อมูล NS</button>
+                            </div>
+                            <p className="text-[10px] text-indigo-600 mt-1.5">*เมื่อใส่ CID ระบบจะดึง "อุปกรณ์และซีเรียล" ทุกรายการของ CID นี้มารวมกันให้อัตโนมัติ</p>
+                        </div>
+                        
+                        {/* ฟอร์มข้อมูลการจ่ายงาน */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
+                                <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-slate-50 text-slate-600" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอเพื่อเลือกทีม</label>
+                                <input type="text" list="districts-list" placeholder="เช่น เขตพระนคร" value={form.districtSearch} onChange={handleDistrictInput} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm outline-none focus:ring-2 focus:ring-amber-500" />
                                 <datalist id="districts-list">
                                     {allDistrictsMap.map((d, i) => <option key={i} value={d.name} />)}
                                 </datalist>
@@ -582,13 +651,13 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                     <optgroup label="ทีมในโซนพื้นที่ (เรียงตามคิว)">
                                       {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`z-${t}`} value={t.trim()}>{t.trim()}</option>)}
                                     </optgroup>
-                                    <optgroup label="รายชื่อทีมทั้งหมด (ในฐานข้อมูล)">
+                                    <optgroup label="รายชื่อทีมทั้งหมด">
                                       {masterData.teams.map(t => <option key={`a-${t}`} value={t}>{t}</option>)}
                                     </optgroup>
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป (ระบุเองได้)</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป</label>
                                 <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm font-bold text-slate-600 bg-white focus:ring-2 focus:ring-slate-500 outline-none">
                                     <option value="">- เลือกระบุทีมเอง -</option>
                                     <optgroup label="ทีมในโซนพื้นที่">
@@ -601,17 +670,27 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">CIDs</label>
-                                <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                        {/* ฟิลด์ข้อมูลลูกค้าที่ผูกกับ Auto-fill */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">CIDs (CIRCUIT NO.)</label>
+                                    <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm font-bold text-blue-700" />
+                                </div>
+                                <div className="w-1/3">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Site Type</label>
+                                    <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="w-full mt-1 px-2 py-1.5 border rounded-md text-sm outline-none">
+                                        <option value="Terminate">Terminate</option>
+                                        <option value="Originate">Originate</option>
+                                    </select>
+                                </div>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า (Customer Name)</label>
                                 <input type="text" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
                             </div>
                             <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">ที่อยู่</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">ที่อยู่ (Address)</label>
                                 <input type="text" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
                             </div>
                             <div>
@@ -619,24 +698,38 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 <input type="text" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่ยกเลิกใช้งาน</label>
-                                <input type="text" placeholder="ระบุวันที่/ข้อความ" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่ยกเลิกใช้งาน (Due Job)</label>
+                                <input type="text" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm text-red-600" />
                             </div>
+                            
+                            {/* ฟิลด์ใหม่ Getback Date/Time */}
+                            <div className="flex gap-2 md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase"><i className="fa-regular fa-calendar-check mr-1"></i>วันที่เข้าเก็บ (Getback Date)</label>
+                                    <input type="text" placeholder="ระบุวันเข้าเก็บ" value={form.getbackDate} onChange={e=>setForm({...form, getbackDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-xs font-bold text-slate-500 uppercase"><i className="fa-regular fa-clock mr-1"></i>เวลา (Getback Time)</label>
+                                    <input type="text" placeholder="ระบุเวลาเข้าเก็บ" value={form.getbackTime} onChange={e=>setForm({...form, getbackTime: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                                </div>
+                            </div>
+
                             <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">รายละเอียดงาน</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">รายละเอียดงาน (เพิ่มเติม)</label>
                                 <textarea rows="2" value={form.details} onChange={e=>setForm({...form, details: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm"></textarea>
                             </div>
                         </div>
 
-                        <div className="mb-4">
+                        {/* อุปกรณ์จะถูก Auto-fill มาเป็นตับ */}
+                        <div className="mt-2">
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์ (ITEM & SERIAL)</label>
                                 <button onClick={addEquip} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
                                 {equipments.map((eq, i) => (
                                     <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                        <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
+                                        <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400 font-semibold" />
                                         <input type="text" placeholder="Serial Number" value={eq.serial} onChange={e=>{let ne=[...equipments]; ne[i].serial=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
                                         {equipments.length > 1 && <button onClick={()=>rmEquip(i)} className="text-red-400 hover:text-red-600 px-2 transition-colors"><i className="fa-solid fa-circle-xmark text-lg"></i></button>}
                                     </div>
@@ -651,7 +744,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                 <span><i className="fa-brands fa-line text-green-400 mr-1 text-lg"></i> Line Preview</span>
                             </div>
                             <div className="flex-1 line-preview p-4 overflow-y-auto custom-scrollbar flex flex-col">
-                                <div className="line-bubble p-3 text-sm text-slate-800 whitespace-pre-wrap font-sans">
+                                <div className="line-bubble p-3 text-sm text-slate-800 whitespace-pre-wrap font-sans leading-relaxed">
                                     {generateMessage()}
                                 </div>
                             </div>
@@ -685,6 +778,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const collectionRef = db.collection('tasks');
+        const nsCollectionRef = db.collection('ns_tasks'); // ฐานข้อมูลใหม่สำหรับ NS
         const historyRef = db.collection('task_history');
         const masterDataRef = db.collection('master_data').doc('zones_teams');
 
@@ -703,18 +797,25 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
         // --- THE MAIN APP COMPONENT ---
         function App() {
           const [activeTab, setActiveTab] = useState('dashboard');
-          const [tasks, setTasks] = useState([]);
+          
+          const [tasks, setTasks] = useState([]); // ของ Subcontract
+          const [nsTasks, setNsTasks] = useState([]); // ของ NS
+          
           const [isLoading, setIsLoading] = useState(true);
           const [firebaseError, setFirebaseError] = useState(null); 
           const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
           
           const [columns, setColumns] = useState([]);
+          const [nsColumns, setNsColumns] = useState([]);
           const [hiddenColumns, setHiddenColumns] = useState([]); 
           const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
 
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
-          const [dashboardView, setDashboardView] = useState('overview'); 
+          const [dashboardView, setDashboardView] = useState('subcontract'); // เลือกดู Dashboard Subcontract หรือ NS
+          const [dashboardYear, setDashboardYear] = useState('overview');
+          
+          const [tasksSubTab, setTasksSubTab] = useState('subcontract');
 
           const [filterMonth, setFilterMonth] = useState('All');
           const [filterTeams, setFilterTeams] = useState([]);
@@ -740,11 +841,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
           const timeoutRef = useRef(null);
 
+          // โหลด Master Data
           useEffect(() => {
-              setIsLoading(true); setFirebaseError(null);
-              const savedCols = localStorage.getItem('equip_tracker_columns');
-              if (savedCols) setColumns(JSON.parse(savedCols));
-
               const unsubMaster = masterDataRef.onSnapshot(doc => {
                   if (doc.exists && doc.data().zones) {
                       const data = doc.data();
@@ -757,31 +855,40 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       masterDataRef.set({ ...defaultMasterData, queue: {} }, { merge: true });
                   }
               });
+              return () => unsubMaster();
+          }, []);
 
-              const unsubscribe = collectionRef.onSnapshot((snapshot) => {
-                  if (snapshot.empty) {
-                      setFirebaseError("ไม่พบข้อมูลใน Collection 'tasks'"); setIsLoading(false); return;
-                  }
-                  
+          // โหลดข้อมูลจาก 2 ฐาน (Subcontract และ NS)
+          useEffect(() => {
+              setIsLoading(true); setFirebaseError(null);
+              const savedCols = localStorage.getItem('equip_tracker_columns');
+              if (savedCols) setColumns(JSON.parse(savedCols));
+              
+              const savedNsCols = localStorage.getItem('equip_tracker_ns_columns');
+              if (savedNsCols) setNsColumns(JSON.parse(savedNsCols));
+
+              // ดึงงาน Subcontract
+              const unsubscribeTasks = collectionRef.onSnapshot((snapshot) => {
+                  if (snapshot.empty) return;
                   let allCols = new Set(columns);
                   let metadataCols = null;
                   let isSyncingStatus = false;
-                  
-                  const realTasks = [];
+                  const newTasks = [];
                   const assignTasks = [];
                   const now = Date.now();
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
-                      
-                      // อ่านสถานะ Sync Lock จาก Firebase เพื่อค้างหน้าจอไม่ให้วูบวาบ
                       if (doc.id === '_sync_status') {
                           const data = doc.data();
                           const ts = parseInt(data.timestamp?.integerValue) || 0;
-                          if (data.status?.stringValue === 'syncing' && (now - ts < 15000)) {
-                              isSyncingStatus = true;
-                          }
+                          if (data.status?.stringValue === 'syncing' && (now - ts < 15000)) isSyncingStatus = true;
                           return;
+                      }
+
+                      if (doc.id.startsWith('task_assign_')) {
+                          const ts = parseInt(doc.id.replace('task_assign_', ''));
+                          if (!isNaN(ts) && (now - ts > 15000)) { collectionRef.doc(doc.id).delete().catch(()=>{}); return; }
                       }
 
                       const data = doc.data();
@@ -795,109 +902,123 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       });
                       
                       let rIndex = 0;
-                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) {
-                          rIndex = parseInt(data['_rowIndex'].integerValue);
-                      } else if (data['_rowIndex'] !== undefined) {
-                          rIndex = parseInt(data['_rowIndex']);
-                      } else {
-                          const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', ''));
-                          rIndex = isNaN(parsed) ? 999999 : parsed; 
-                      }
+                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
+                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
+                      else { const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
                       
                       cleanData._rowIndex = rIndex || 0;
                       
-                      if (doc.id.startsWith('task_assign_')) {
-                          assignTasks.push(cleanData);
-                      } else {
-                          realTasks.push(cleanData);
-                      }
+                      if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
+                      else newTasks.push(cleanData);
                   });
 
-                  // นักล่าข้อมูลซ้ำ (Duplicate Hunter): ไล่ฆ่าข้อมูลจำลองที่กลายเป็นตัวจริงแล้วทิ้ง
                   assignTasks.forEach(assignT => {
-                      const isDuplicate = realTasks.some(realT => {
-                          // เทียบฟิลด์ที่สำคัญ
+                      const isDuplicate = newTasks.some(realT => {
                           const keysToCompare = Object.keys(assignT).filter(k => k !== 'id' && k !== '_rowIndex' && assignT[k] && assignT[k] !== '-');
                           if (keysToCompare.length === 0) return false;
                           return keysToCompare.every(k => realT[k] === assignT[k]);
                       });
-
                       const timestamp = parseInt(assignT.id.replace('task_assign_', ''));
                       const isExpired = !isNaN(timestamp) && (now - timestamp > 15000);
-
-                      if (isDuplicate || isExpired) {
-                          collectionRef.doc(assignT.id).delete().catch(()=>{});
-                      } else {
-                          realTasks.push(assignT);
-                      }
+                      if (isDuplicate || isExpired) collectionRef.doc(assignT.id).delete().catch(()=>{});
+                      else newTasks.push(assignT);
                   });
 
-                  const validTasks = realTasks.filter(task => {
-                      return Object.keys(task).some(k => 
-                          k !== 'id' && k !== '_rowIndex' && 
-                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
-                          String(task[k]).trim() !== ''
-                      );
+                  const validTasks = newTasks.filter(task => {
+                      return Object.keys(task).some(k => k !== 'id' && k !== '_rowIndex' && !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && String(task[k]).trim() !== '');
                   });
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-                  const delayTime = 100; 
-                  
                   clearTimeout(timeoutRef.current);
                   timeoutRef.current = setTimeout(() => {
-                      if (isSyncingStatus) {
-                          setIsBackgroundSyncing(true);
-                      } else {
-                          setIsBackgroundSyncing(false);
-                          setTasks(validTasks); 
-                          setFirebaseError(null); 
-                          
-                          if (metadataCols && Array.isArray(metadataCols)) {
-                              setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols));
-                          } else if (allCols.size > columns.length) {
-                              const colsArray = Array.from(allCols);
-                              setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray));
-                          }
+                      if (isSyncingStatus) setIsBackgroundSyncing(true);
+                      else {
+                          setIsBackgroundSyncing(false); setTasks(validTasks); setFirebaseError(null); 
+                          if (metadataCols && Array.isArray(metadataCols)) { setColumns(metadataCols); localStorage.setItem('equip_tracker_columns', JSON.stringify(metadataCols)); }
+                          else if (allCols.size > columns.length) { const colsArray = Array.from(allCols); setColumns(colsArray); localStorage.setItem('equip_tracker_columns', JSON.stringify(colsArray)); }
                           localStorage.setItem('equip_tracker_tasks', JSON.stringify(validTasks));
                           setIsLoading(false);
                       }
-                  }, delayTime);
+                  }, 100);
+              }, (error) => { console.error("Firestore Error:", error); setFirebaseError(`Error: ${error.message}`); setIsLoading(false); });
+
+              // ดึงงาน NS
+              const unsubscribeNS = nsCollectionRef.onSnapshot((snapshot) => {
+                  if (snapshot.empty) return;
+                  let allCols = new Set(nsColumns);
+                  let metadataCols = null;
+                  const validTasks = [];
+
+                  snapshot.forEach((doc) => {
+                      if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
+                      if (doc.id === '_sync_status') return;
+
+                      const data = doc.data();
+                      const cleanData = { id: doc.id };
+                      Object.keys(data).forEach(key => {
+                          if (key !== '_rowIndex') {
+                              let rawValue = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
+                              cleanData[key] = formatSheetDate(rawValue);
+                              allCols.add(key);
+                          }
+                      });
+                      
+                      let rIndex = 0;
+                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
+                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
+                      else { const parsed = parseInt(doc.id.replace('task_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
+                      
+                      cleanData._rowIndex = rIndex || 0;
+                      
+                      // เก็บเฉพาะแถวที่มีข้อมูล
+                      const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
+                      if(hasData) validTasks.push(cleanData);
+                  });
+
+                  validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
-              }, (error) => {
-                  console.error("Firestore Error:", error); setFirebaseError(`Firebase Error: ${error.message}`);
-                  const savedTasks = localStorage.getItem('equip_tracker_tasks');
-                  if (savedTasks && tasks.length === 0) setTasks(JSON.parse(savedTasks));
-                  setIsLoading(false);
+                  setTimeout(() => {
+                      setNsTasks(validTasks); 
+                      if (metadataCols && Array.isArray(metadataCols)) { setNsColumns(metadataCols); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(metadataCols)); }
+                      else if (allCols.size > nsColumns.length) { const colsArray = Array.from(allCols); setNsColumns(colsArray); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(colsArray)); }
+                  }, 100);
               });
 
-              return () => { unsubscribe(); unsubMaster(); };
+              return () => { unsubscribeTasks(); unsubscribeNS(); };
           }, []);
 
+          // เลือกว่าจะโชว์คอลัมน์ของ Subcontract หรือ NS
+          const currentColumns = tasksSubTab === 'subcontract' ? columns : nsColumns;
+          const currentTasks = tasksSubTab === 'subcontract' ? tasks : nsTasks;
+          
+          const dashboardTasks = dashboardView === 'subcontract' ? tasks : nsTasks;
+          const dashboardColumns = dashboardView === 'subcontract' ? columns : nsColumns;
+
           useEffect(() => {
-              if (columns.length > 0) {
-                  const findCol = (keywords) => columns.find(c => keywords.some(kw => c?.toLowerCase().includes(kw.toLowerCase()))) || '';
-                  const colB = columns.length > 1 ? columns[1] : '';
-                  const colC = columns.length > 2 ? columns[2] : '';
-                  const colG = columns.length > 6 ? columns[6] : '';
-                  const statusCol = findCol(['สถานะ', 'status']) || columns[columns.length - 1] || '';
+              if (currentColumns.length > 0) {
+                  const findCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().includes(kw.toLowerCase()))) || '';
+                  const colB = currentColumns.length > 1 ? currentColumns[1] : '';
+                  const colC = currentColumns.length > 2 ? currentColumns[2] : '';
+                  const colG = currentColumns.length > 6 ? currentColumns[6] : '';
+                  const statusCol = findCol(['สถานะ', 'status']) || currentColumns[currentColumns.length - 1] || '';
                   const contactColName = findCol(['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ']);
-                  const phoneColName = columns.find(c => c !== contactColName && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
-                  const timeColName = columns.find(c => {
+                  const phoneColName = currentColumns.find(c => c !== contactColName && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
+                  const timeColName = currentColumns.find(c => {
                       const lc = c?.toLowerCase() || '';
                       return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time') || lc.includes('นัด'));
                   }) || colG;
-                  const dateColName = columns.find(c => {
+                  const dateColName = currentColumns.find(c => {
                       const lc = c?.toLowerCase() || '';
                       return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('วันที่เข้าเก็บ') || lc.includes('วันที่') || lc.includes('date'));
-                  }) || columns[0];
+                  }) || currentColumns[0];
 
                   setKeyMap({
                       colB, colC, date: dateColName, status: statusCol, team: findCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || colB,
                       company: findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company']) || colC, time: timeColName, contactName: contactColName, phone: phoneColName
                   });
               }
-          }, [columns]);
+          }, [currentColumns]);
 
           useEffect(() => {
               if (showHistoryModal) {
@@ -936,28 +1057,36 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           };
 
           const handleCellChange = async (id, field, value) => {
-              const previousTasks = [...tasks];
+              const previousTasks = [...currentTasks];
               const taskObj = previousTasks.find(t => t.id === id);
               const oldValue = taskObj ? taskObj[field] : '';
               if(oldValue === value) return;
 
-              setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
+              // อัปเดต UI ทันที
+              if (tasksSubTab === 'subcontract') setTasks(tasks.map(task => task.id === id ? { ...task, [field]: value } : task));
+              else setNsTasks(nsTasks.map(task => task.id === id ? { ...task, [field]: value } : task));
               
               try {
-                  await collectionRef.doc(id).set({ [field]: value }, { merge: true });
+                  // เลือกว่าจะเซฟลง Firebase ของใคร
+                  const targetCollectionRef = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
+                  const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
+
+                  await targetCollectionRef.doc(id).set({ [field]: value }, { merge: true });
                   await historyRef.add({ taskId: id, company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                  
                   if (GAS_WEB_APP_URL) {
                       const rowNum = id.replace('task_', ''); 
-                      const payloadData = JSON.stringify({ row: rowNum, field: field, value: value });
+                      const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
                       fetch(GAS_WEB_APP_URL, {
-                          method: 'POST',
-                          mode: 'no-cors',
+                          method: 'POST', mode: 'no-cors',
                           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                           body: payloadData
                       }).catch(e => console.error("Sync to Sheet failed:", e));
                   }
               } catch (e) {
-                  console.error("Error updating document: ", e); setTasks(previousTasks); alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
+                  console.error("Error updating document: ", e); 
+                  if (tasksSubTab === 'subcontract') setTasks(previousTasks); else setNsTasks(previousTasks);
+                  alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
               }
           };
 
@@ -985,20 +1114,20 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
 
           const { date: dateCol, status: statusCol, team: teamCol, company: compCol, time: timeCol } = keyMap;
-          const cidCol = columns.find(c => c?.toLowerCase().includes('cid')) || '';
-          const equipYearCol = columns.find(c => c?.toLowerCase().includes('year') || c?.includes('ปี')) || '';
-          const noteCol = columns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
-          const overDueCol = columns.find(c => { const lowerC = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด'); }) || '';
-          const getCollectionDateCol = () => columns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
+          const cidCol = dashboardColumns.find(c => c?.toLowerCase().includes('cid')) || '';
+          const equipYearCol = dashboardColumns.find(c => c?.toLowerCase().includes('year') || c?.includes('ปี')) || '';
+          const noteCol = dashboardColumns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
+          const overDueCol = dashboardColumns.find(c => { const lowerC = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด'); }) || '';
+          const getCollectionDateCol = () => dashboardColumns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
           const getTaskEffectiveDateStr = (t) => {
               const targetCol = getCollectionDateCol(); let dateStr = targetCol ? t[targetCol] : null;
               if (!dateStr || String(dateStr).trim() === '') { const today = new Date(); dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; }
               return dateStr;
           };
 
-          const uniqueTeams = teamCol ? [...new Set(tasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
+          const uniqueTeams = teamCol ? [...new Set(dashboardTasks.map(t => getCleanTeam(t[teamCol])))].sort() : [];
           
-          const baseFilteredTasks = tasks.filter(t => {
+          const baseFilteredTasks = dashboardTasks.filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
               const parsedD = parseDateHelper(getTaskEffectiveDateStr(t));
               let m = parsedD ? parsedD.getMonth() + 1 : null;
@@ -1009,18 +1138,18 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   if (yMatch) y = parseInt(yMatch[0]); else y = parseInt(eqYearStr);
                   if (y < 100) y += 2000; if (y > 2500) y -= 543; 
               }
-              if (dashboardView === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardView === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
+              if (dashboardYear === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardYear === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
               if (filterMonth !== 'All' && m !== parseInt(filterMonth)) matchMonth = false;
               if (filterTeams.length > 0 && teamCol && !filterTeams.includes(getCleanTeam(t[teamCol]))) matchTeam = false;
               return matchMonth && matchTeam && matchYearView;
           });
 
-          const uniqueMonths = [...new Set(tasks.map(t => { const d = parseDateHelper(getTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
-          const uniqueColMonths = [...new Set(tasks.map(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
-          const uniqueCIDs = cidCol ? [...new Set(tasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueDates = dateCol ? [...new Set(tasks.map(t => t[dateCol] ? String(t[dateCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueYears = equipYearCol ? [...new Set(tasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueStatuses = statusCol ? [...new Set(tasks.map(t => getCleanStatus(t[statusCol])))].sort() : [];
+          const uniqueMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
+          const uniqueColMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
+          const uniqueCIDs = cidCol ? [...new Set(dashboardTasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
+          const uniqueDates = dateCol ? [...new Set(dashboardTasks.map(t => t[dateCol] ? String(t[dateCol]).trim() : '').filter(Boolean))].sort() : [];
+          const uniqueYears = equipYearCol ? [...new Set(dashboardTasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
+          const uniqueStatuses = statusCol ? [...new Set(dashboardTasks.map(t => getCleanStatus(t[statusCol])))].sort() : [];
 
           const getStatusColor = (status, opacity = 1) => {
               const s = status ? String(status).trim().toLowerCase() : '';
@@ -1089,7 +1218,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
-          let tableTasks = [...tasks]; 
+          let tableTasks = [...currentTasks]; 
           if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
           if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
           if (tableFilterYear !== 'All' && equipYearCol) tableTasks = tableTasks.filter(t => (t[equipYearCol] ? String(t[equipYearCol]).trim() : '') === tableFilterYear);
@@ -1121,7 +1250,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
               const targetCol = getCollectionDateCol();
-              return tasks.filter(t => isSameDate(targetCol ? t[targetCol] : null, dateObj)).sort((a, b) => {
+              return currentTasks.filter(t => isSameDate(targetCol ? t[targetCol] : null, dateObj)).sort((a, b) => {
                   const sA = getCleanStatus(a[statusCol]).toLowerCase(), sB = getCleanStatus(b[statusCol]).toLowerCase();
                   const isDA = sA.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0; const isDB = sB.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0;
                   if (isDA !== isDB) return isDA - isDB; 
@@ -1132,8 +1261,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const monthSlots = [...Array(getFirstDayOfMonth(currentDate.getFullYear(), currentDate.getMonth())).fill(null), ...Array.from({length: getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth())}, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1))];
           const weekSlots = Array.from({length: 7}, (_, i) => { const d = new Date(currentDate); d.setDate(d.getDate() - d.getDay() + i); return d; });
 
-          const visibleColumns = columns.filter(col => !hiddenColumns.includes(col));
-          const skipColsInTooltip = [ compCol, teamCol, timeCol, dateCol, getCollectionDateCol(), ...columns.filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
+          const visibleColumns = currentColumns.filter(col => !hiddenColumns.includes(col));
+          const skipColsInTooltip = [ compCol, teamCol, timeCol, dateCol, getCollectionDateCol(), ...currentColumns.filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
 
           const SidebarItem = ({ iconClass, label, id }) => (
             <button onClick={() => { setActiveTab(id); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
@@ -1161,13 +1290,28 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     </button>
                     {activeTab === 'dashboard' && isSidebarOpen && (
                         <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
-                            <button onClick={() => { setDashboardView('overview'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
-                            <button onClick={() => { setDashboardView('2026'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === '2026' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
-                            <button onClick={() => { setDashboardView('history'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'history' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2018 - 2025</button>
+                            <p className="text-[10px] text-slate-400 font-bold mb-1 mt-1">เลือกฐานข้อมูล:</p>
+                            <button onClick={() => { setDashboardView('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Subcontract</button>
+                            <button onClick={() => { setDashboardView('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- NS Tasks</button>
+                            
+                            <p className="text-[10px] text-slate-400 font-bold mb-1 mt-2">เลือกปี:</p>
+                            <button onClick={() => { setDashboardYear('overview'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
+                            <button onClick={() => { setDashboardYear('2026'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === '2026' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2026 (ปัจจุบัน)</button>
+                            <button onClick={() => { setDashboardYear('history'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'history' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ปี 2018 - 2025</button>
                         </div>
                     )}
                   </div>
-                  <SidebarItem id="tasks" iconClass="fa-solid fa-table-list" label="ตารางงาน (All Data)" />
+                  <div className="space-y-1">
+                    <button onClick={() => { setActiveTab('tasks'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === 'tasks' ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
+                      <i className={`fa-solid fa-table-list text-lg w-6 text-center ${activeTab === 'tasks' ? 'text-blue-600' : 'opacity-70'}`}></i><span className="whitespace-nowrap">ตารางงาน (All Data)</span>
+                    </button>
+                    {activeTab === 'tasks' && isSidebarOpen && (
+                        <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
+                            <button onClick={() => { setTasksSubTab('subcontract'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
+                            <button onClick={() => { setTasksSubTab('ns'); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
+                        </div>
+                    )}
+                  </div>
                   <SidebarItem id="calendar" iconClass="fa-solid fa-calendar-days" label="ปฏิทิน (Timeline)" />
                   
                   <div className="pt-4 mt-2 border-t border-slate-100">
@@ -1192,8 +1336,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             <div className="flex items-center gap-3">
                               <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block"><i className="fa-solid fa-bars"></i></button>
                               <div>
-                                  <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ</h2>
-                                  <p className="text-xs md:text-sm text-slate-500 mt-1">มุมมอง: <span className="font-semibold text-blue-600">{dashboardView === 'overview' ? 'ภาพรวมทั้งหมด' : dashboardView === '2026' ? 'ปี 2026 (ปัจจุบัน)' : 'ปี 2018 - 2025'}</span></p>
+                                  <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ {dashboardView === 'ns' ? '(NS)' : '(Subcontract)'}</h2>
+                                  <p className="text-xs md:text-sm text-slate-500 mt-1">มุมมอง: <span className="font-semibold text-blue-600">{dashboardYear === 'overview' ? 'ภาพรวมทั้งหมด' : dashboardYear === '2026' ? 'ปี 2026 (ปัจจุบัน)' : 'ปี 2018 - 2025'}</span></p>
                               </div>
                             </div>
                         </div>
@@ -1254,7 +1398,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block"><i className="fa-solid fa-bars"></i></button>
-                        <div><h2 className="text-xl md:text-3xl font-bold text-slate-900">ข้อมูลตารางงานทั้งหมด</h2></div>
+                        <div><h2 className="text-xl md:text-3xl font-bold text-slate-900">ตารางงาน {tasksSubTab === 'ns' ? '(NS Tasks)' : '(Subcontract)'}</h2></div>
                       </div>
                       <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 px-4 py-2 rounded-lg font-bold border border-indigo-200 transition-colors text-sm shadow-sm">
                           <i className="fa-solid fa-clock-rotate-left"></i> ดูประวัติการแก้ไข
@@ -1274,7 +1418,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             {equipYearCol && <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">ปี (ทั้งหมด)</option>{uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}</select>}
                             {statusCol && <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>}
                             {overDueCol && <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">นัดหมายลูกค้า (ทั้งหมด)</option><option value="ครบกำหนด">ครบกำหนด (0 วัน)</option><option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option><option value="เกินกำหนด">เกินกำหนด (เกิน...)</option></select>}
-                            <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={columns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
+                            <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={currentColumns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
                         </div>
                     </div>
 
@@ -1296,7 +1440,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           </thead>
                           <tbody className="divide-y divide-slate-200">
                             {isLoading ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500"><i className="fa-solid fa-circle-notch fa-spin text-blue-500 mr-2"></i>กำลังดึงข้อมูล...</td></tr>
-                            : tasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า</td></tr>
+                            : currentTasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ฐานข้อมูลว่างเปล่า</td></tr>
                             : finalTableTasks.length === 0 ? <tr><td colSpan={Math.max(visibleColumns.length, 1)} className="p-8 text-center text-slate-500">ไม่พบข้อมูล...</td></tr>
                             : finalTableTasks.map((task) => (
                               <tr key={task.id} className={`transition-colors ${isBackgroundSyncing ? 'opacity-70 pointer-events-none' : 'hover:bg-slate-50'}`}>
@@ -1618,7 +1762,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 {activeTab === 'master_data' && <MasterDataTab masterData={masterData} masterDataRef={masterDataRef} />}
 
                 {/* --- 5. หน้า ASSIGN JOB --- */}
-                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} />}
+                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} nsTasks={nsTasks} />}
 
               </main>
 
