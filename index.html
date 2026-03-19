@@ -402,7 +402,7 @@
         };
 
         // -------------------------------------------------------------
-        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (พร้อมระบบ Magic Autofill) ---
+        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (ปรับ UI & Autofill อัจฉริยะ) ---
         // -------------------------------------------------------------
         const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks }) => {
             
@@ -433,51 +433,86 @@
                 return matchedKey ? t[matchedKey] : '';
             };
 
-            // อัปเดตรายการ CID Auto-complete (ดึงเฉพาะ Circuit NO อย่างเดียว)
+            // อัปเดตรายการ CID Auto-complete (ดึงเฉพาะ Circuit NO)
             const nsCidOptions = useMemo(() => {
                 const cids = nsTasks.map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
                 return [...new Set(cids)];
             }, [nsTasks]);
 
+            // Magic Auto Fill ที่อัปเกรดใหม่: ทับข้อมูลเดิม 100% & สลับ Site Type ให้ถ้าจำเป็น
             const handleAutoFill = () => {
                 if (!searchCid.trim()) { alert("กรุณาพิมพ์เลข CIRCUIT NO. ที่ต้องการค้นหาครับ"); return; }
                 
-                // กรองด้วยเงื่อนไข 2 ชั้น: Circuit NO + Site Type
-                const matchedRows = nsTasks.filter(t => {
+                // หา CID ให้เจอก่อน (ไม่สนเรื่อง Site Type)
+                const matchedCids = nsTasks.filter(t => {
                     const cid = getVal(t, ['circuitno', 'cid']);
-                    const st = getVal(t, ['sitetype', 'originate', 'terminate', 'site type']); // รองรับหลายชื่อหัวคอลัมน์
-                    const matchCid = String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
-                    const matchType = String(st).trim().toLowerCase() === form.siteType.trim().toLowerCase();
-                    return matchCid && matchType;
+                    return String(cid).trim().toLowerCase() === searchCid.trim().toLowerCase();
                 });
+
+                if (matchedCids.length === 0) {
+                    alert(`❌ ไม่พบข้อมูล CID: "${searchCid}" ในฐานข้อมูล NS ครับ`);
+                    return;
+                }
+
+                // กรองเฉพาะบรรทัดที่ Site Type ตรงกับในฟอร์ม
+                let matchedRows = matchedCids.filter(t => {
+                    const st = getVal(t, ['sitetype', 'originate', 'terminate', 'site type']);
+                    return String(st).trim().toLowerCase() === form.siteType.trim().toLowerCase();
+                });
+
+                let actualSiteType = form.siteType;
+                let isAutoSwitched = false;
+
+                // ถ้า CID นี้มีอยู่ แต่ไม่ใช่ Site Type ที่ผู้ใช้เลือกไว้ -> ให้เปลี่ยน Site Type ให้อัตโนมัติเลย
+                if (matchedRows.length === 0) {
+                    actualSiteType = String(getVal(matchedCids[0], ['sitetype', 'originate', 'terminate', 'site type'])).trim() || 'Terminate';
+                    matchedRows = matchedCids.filter(t => {
+                        const st = getVal(t, ['sitetype', 'originate', 'terminate', 'site type']);
+                        return String(st).trim().toLowerCase() === actualSiteType.toLowerCase();
+                    });
+                    isAutoSwitched = true;
+                }
 
                 if (matchedRows.length > 0) {
                     const first = matchedRows[0];
+                    
+                    // ทับข้อมูลเดิมทั้งหมดในช่องของลูกค้า
                     setForm(prev => ({
                         ...prev,
-                        cid: getVal(first, ['circuitno', 'cid']),
-                        customerName: getVal(first, ['customername', 'บริษัท']),
-                        address: getVal(first, ['address', 'ที่อยู่']),
-                        phone: getVal(first, ['customercontract', 'contract', 'เบอร์', 'phone']),
-                        cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก']),
-                        getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ']),
-                        getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา'])
+                        cid: getVal(first, ['circuitno', 'cid']) || prev.cid, 
+                        siteType: actualSiteType,
+                        customerName: getVal(first, ['customername', 'บริษัท']) || '',
+                        address: getVal(first, ['address', 'ที่อยู่']) || '',
+                        phone: getVal(first, ['customercontract', 'contract', 'เบอร์', 'phone']) || '',
+                        cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก']) || '',
+                        getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ']) || '',
+                        getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา']) || '',
+                        details: '' // ล้าง details ป้องกันการปนเปื้อนข้อมูลเก่า
                     }));
 
-                    // ดึงอุปกรณ์จาก 'ทุกแถว' ที่ผ่านการกรอง (รวมอุปกรณ์ 1-to-many)
+                    // ดึงอุปกรณ์ทุกตัว (1-to-many) มาเรียงใหม่ ให้ SN ขึ้นก่อน
                     const equips = matchedRows.map(t => ({
-                        name: getVal(t, ['itemname', 'อุปกรณ์']),
-                        serial: getVal(t, ['serialno', 'serial', 'sn'])
+                        name: getVal(t, ['itemname', 'อุปกรณ์']) || '',
+                        serial: getVal(t, ['serialno', 'serial', 'sn']) || ''
                     })).filter(e => e.name || e.serial);
+
+                    equips.sort((a, b) => {
+                        const aHasSn = a.serial.trim() !== '' ? 1 : 0;
+                        const bHasSn = b.serial.trim() !== '' ? 1 : 0;
+                        return bHasSn - aHasSn;
+                    });
 
                     if (equips.length > 0) {
                         setEquipments(equips);
                     } else {
                         setEquipments([{ name: '', serial: '' }]);
                     }
-                    alert(`✅ ดึงข้อมูล CID: ${searchCid} (ประเภท: ${form.siteType}) สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
-                } else {
-                    alert(`❌ ไม่พบข้อมูลของ\nCID: "${searchCid}"\nSite Type: "${form.siteType}"\nในฐานข้อมูล NS ครับ โปรดตรวจสอบตัวสะกดหรือเปลี่ยนประเภท Site Type แล้วลองใหม่`);
+                    
+                    if (isAutoSwitched) {
+                        alert(`✅ ดึงข้อมูล CID: ${searchCid} สำเร็จ!\n(ระบบสลับ Site Type เป็น "${actualSiteType}" ให้อัตโนมัติ)\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
+                    } else {
+                        alert(`✅ ดึงข้อมูล CID: ${searchCid} (ประเภท: ${actualSiteType}) สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
+                    }
                 }
             };
 
@@ -504,7 +539,7 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
-            // ปรับข้อความ LINE ไม่ให้มี Site Type แล้วตามที่ร้องขอ
+            // ปรับข้อความ LINE ไม่ให้มีคำว่า Site Type โชว์
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
@@ -600,157 +635,157 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
             };
 
             return (
-                <div className="absolute inset-0 p-4 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-6">
-                    <div className="flex-1 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-4">
+                <div className="absolute inset-0 p-3 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-4">
+                    <div className="flex-1 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-3">
                         
                         <div className="flex justify-between items-center border-b pb-2">
-                            <h2 className="text-xl font-bold text-slate-800"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน (Assign Job)</h2>
+                            <h2 className="text-lg font-bold text-slate-800"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน</h2>
                         </div>
 
-                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ (เพิ่ม Site Type) */}
-                        <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl shadow-sm">
-                            <h3 className="text-sm font-bold text-indigo-800 mb-2"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i> ดึงข้อมูลอัตโนมัติจากฐานข้อมูล NS</h3>
+                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ (Compact Design) */}
+                        <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm">
+                            <h3 className="text-xs font-bold text-indigo-800 mb-1.5"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i> ดึงข้อมูลอัตโนมัติจาก NS (ค้นหาด้วย CID)</h3>
                             <div className="flex flex-col sm:flex-row gap-2">
                                 <div className="flex-1 flex gap-2">
                                     <input 
                                         type="text" 
-                                        placeholder="พิมพ์ CIRCUIT NO. เพื่อค้นหา..." 
+                                        placeholder="พิมพ์ CIRCUIT NO..." 
                                         value={searchCid} 
                                         onChange={e => setSearchCid(e.target.value)} 
-                                        className="flex-1 px-3 py-2 rounded-lg border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold" 
+                                        className="flex-1 px-3 py-1.5 rounded-md border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold shadow-inner" 
                                         list="ns-cids-list" 
                                     />
                                     <datalist id="ns-cids-list">
                                         {nsCidOptions.map((c, i) => <option key={i} value={c} />)}
                                     </datalist>
-                                    <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="px-2 py-2 border border-indigo-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-800 bg-white">
+                                    <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="px-2 py-1.5 border border-indigo-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-800 bg-white shadow-inner w-28 shrink-0">
                                         <option value="Terminate">Terminate</option>
                                         <option value="Originate">Originate</option>
                                     </select>
                                 </div>
-                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors whitespace-nowrap"><i className="fa-solid fa-cloud-arrow-down mr-1"></i> ดึงข้อมูล NS</button>
+                                <button onClick={handleAutoFill} type="button" className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-sm font-bold shadow-sm transition-colors whitespace-nowrap"><i className="fa-solid fa-cloud-arrow-down mr-1"></i> ดึงข้อมูล NS</button>
                             </div>
-                            <p className="text-[10px] text-indigo-600 mt-1.5">*เมื่อใส่ CID และเลือก Site Type ให้ตรงกัน ระบบจะดึง "อุปกรณ์และซีเรียล" ทุกรายการมารวมให้ในฟอร์มเดียวอัตโนมัติ</p>
                         </div>
                         
-                        {/* ฟอร์มข้อมูลการจ่ายงาน */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* ฟอร์มข้อมูลการจ่ายงาน (ย่อส่วนให้กระทัดรัดขึ้น) */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
-                                <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm bg-slate-50 text-slate-600" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอเพื่อเลือกทีม</label>
-                                <input type="text" list="districts-list" placeholder="เช่น เขตพระนคร" value={form.districtSearch} onChange={handleDistrictInput} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm outline-none focus:ring-2 focus:ring-amber-500" />
-                                <datalist id="districts-list">
-                                    {allDistrictsMap.map((d, i) => <option key={i} value={d.name} />)}
-                                </datalist>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
+                                <input type="text" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs bg-slate-50 text-slate-600" />
                             </div>
                             <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase text-amber-600">โซนพื้นที่รับผิดชอบ (ดึงอัตโนมัติจากเขต หรือเลือกเองได้)</label>
-                                <select value={form.zoneId} onChange={(e)=>handleZoneSelect(e.target.value)} className="w-full mt-1 px-3 py-1.5 border border-amber-300 rounded-md text-sm font-bold text-amber-800 bg-amber-50 outline-none focus:ring-2 focus:ring-amber-500">
-                                    <option value="">-- เลือกโซนพื้นที่ --</option>
-                                    {masterData.zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">พิมพ์ค้นหาเขต/อำเภอเพื่อเลือกทีม</label>
+                                <div className="flex gap-2">
+                                    <input type="text" list="districts-list" placeholder="เช่น เขตพระนคร" value={form.districtSearch} onChange={handleDistrictInput} className="w-full mt-0.5 px-2 py-1 border rounded text-xs outline-none focus:border-amber-500" />
+                                    <datalist id="districts-list">{allDistrictsMap.map((d, i) => <option key={i} value={d.name} />)}</datalist>
+                                    <select value={form.zoneId} onChange={(e)=>handleZoneSelect(e.target.value)} className="w-full mt-0.5 px-2 py-1 border border-amber-300 rounded text-xs font-bold text-amber-800 bg-amber-50 outline-none">
+                                        <option value="">-- เลือกโซนพื้นที่ --</option>
+                                        {masterData.zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div></div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase text-blue-600">ผู้รับเหมา (คิวปัจจุบัน)</label>
+                                <select value={form.team} onChange={e=>setForm({...form, team: e.target.value})} className="w-full mt-0.5 px-2 py-1 border border-blue-300 rounded text-xs font-bold text-blue-700 bg-blue-50 outline-none focus:ring-1 focus:ring-blue-500">
+                                    <option value="">- เลือกระบุทีมเอง -</option>
+                                    <optgroup label="ทีมในโซนพื้นที่">{form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`z-${t}`} value={t.trim()}>{t.trim()}</option>)}</optgroup>
+                                    <optgroup label="รายชื่อทีมทั้งหมด">{masterData.teams.map(t => <option key={`a-${t}`} value={t}>{t}</option>)}</optgroup>
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase text-blue-600">ผู้รับเหมา (คิวปัจจุบัน)</label>
-                                <select value={form.team} onChange={e=>setForm({...form, team: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-blue-300 rounded-md text-sm font-bold text-blue-700 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป</label>
+                                <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-0.5 px-2 py-1 border border-slate-300 rounded text-xs font-bold text-slate-600 bg-white outline-none focus:ring-1 focus:ring-slate-500">
                                     <option value="">- เลือกระบุทีมเอง -</option>
-                                    <optgroup label="ทีมในโซนพื้นที่ (เรียงตามคิว)">
-                                      {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`z-${t}`} value={t.trim()}>{t.trim()}</option>)}
-                                    </optgroup>
-                                    <optgroup label="รายชื่อทีมทั้งหมด">
-                                      {masterData.teams.map(t => <option key={`a-${t}`} value={t}>{t}</option>)}
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase text-slate-400">คิวลำดับถัดไป (ระบุเองได้)</label>
-                                <select value={form.nextTeam} onChange={e=>setForm({...form, nextTeam: e.target.value})} className="w-full mt-1 px-3 py-1.5 border border-slate-300 rounded-md text-sm font-bold text-slate-600 bg-white focus:ring-2 focus:ring-slate-500 outline-none">
-                                    <option value="">- เลือกระบุทีมเอง -</option>
-                                    <optgroup label="ทีมในโซนพื้นที่">
-                                      {form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`nz-${t}`} value={t.trim()}>{t.trim()}</option>)}
-                                    </optgroup>
-                                    <optgroup label="รายชื่อทีมทั้งหมด">
-                                      {masterData.teams.map(t => <option key={`na-${t}`} value={t}>{t}</option>)}
-                                    </optgroup>
+                                    <optgroup label="ทีมในโซนพื้นที่">{form.zoneId && masterData.zones.find(z=>z.id===form.zoneId)?.teams.split(',').map(t=><option key={`nz-${t}`} value={t.trim()}>{t.trim()}</option>)}</optgroup>
+                                    <optgroup label="รายชื่อทีมทั้งหมด">{masterData.teams.map(t => <option key={`na-${t}`} value={t}>{t}</option>)}</optgroup>
                                 </select>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-                            <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">CIDs (CIRCUIT NO.)</label>
-                                <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm font-bold text-blue-700" />
+                        {/* ฟิลด์ข้อมูลลูกค้าที่ผูกกับ Auto-fill (ยุบรวมบรรทัดเดียวกัน) */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border-t pt-3">
+                            <div className="col-span-1 md:col-span-4 flex gap-2">
+                                <div className="flex-1">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">CIDs</label>
+                                    <input type="text" value={form.cid} onChange={e=>setForm({...form, cid: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs font-bold text-blue-700" />
+                                </div>
+                                <div className="w-20 shrink-0 hidden md:block">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">Site</label>
+                                    <input type="text" value={form.siteType} disabled className="w-full mt-0.5 px-2 py-1 border border-dashed rounded text-[10px] font-semibold text-slate-500 bg-slate-50" />
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">บริษัทลูกค้า (Customer Name)</label>
-                                <input type="text" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                            <div className="col-span-1 md:col-span-8">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">บริษัทลูกค้า (Customer Name)</label>
+                                <input type="text" value={form.customerName} onChange={e=>setForm({...form, customerName: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs" />
                             </div>
-                            <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">ที่อยู่ (Address)</label>
-                                <input type="text" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+
+                            <div className="col-span-1 md:col-span-8">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">ที่อยู่ (Address)</label>
+                                <input type="text" value={form.address} onChange={e=>setForm({...form, address: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs" />
                             </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">เบอร์ติดต่อ</label>
-                                <input type="text" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">วันที่ยกเลิกใช้งาน (Due Job)</label>
-                                <input type="text" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm text-red-600" />
+                            <div className="col-span-1 md:col-span-4">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">เบอร์ติดต่อ</label>
+                                <input type="text" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs" />
                             </div>
                             
-                            <div className="flex gap-2 md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                            <div className="col-span-1 md:col-span-4">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">วันที่ยกเลิก (Due Job)</label>
+                                <input type="text" value={form.cancelDate} onChange={e=>setForm({...form, cancelDate: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs text-red-600" />
+                            </div>
+                            <div className="col-span-1 md:col-span-8 flex gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
                                 <div className="flex-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase"><i className="fa-regular fa-calendar-check mr-1"></i>วันที่เข้าเก็บ (Getback Date)</label>
-                                    <input type="text" placeholder="ระบุวันเข้าเก็บ" value={form.getbackDate} onChange={e=>setForm({...form, getbackDate: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">เข้าเก็บ (Getback Date)</label>
+                                    <input type="text" placeholder="ระบุวัน" value={form.getbackDate} onChange={e=>setForm({...form, getbackDate: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs" />
                                 </div>
                                 <div className="flex-1">
-                                    <label className="text-xs font-bold text-slate-500 uppercase"><i className="fa-regular fa-clock mr-1"></i>เวลา (Getback Time)</label>
-                                    <input type="text" placeholder="ระบุเวลาเข้าเก็บ" value={form.getbackTime} onChange={e=>setForm({...form, getbackTime: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm" />
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase">เวลา (Time)</label>
+                                    <input type="text" placeholder="ระบุเวลา" value={form.getbackTime} onChange={e=>setForm({...form, getbackTime: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs" />
                                 </div>
                             </div>
 
-                            <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">รายละเอียดงาน (เพิ่มเติม)</label>
-                                <textarea rows="2" value={form.details} onChange={e=>setForm({...form, details: e.target.value})} className="w-full mt-1 px-3 py-1.5 border rounded-md text-sm"></textarea>
+                            <div className="col-span-1 md:col-span-12">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">รายละเอียดงาน (เพิ่มเติม)</label>
+                                <textarea rows="1" value={form.details} onChange={e=>setForm({...form, details: e.target.value})} className="w-full mt-0.5 px-2 py-1 border rounded text-xs"></textarea>
                             </div>
                         </div>
 
-                        <div className="mb-4">
+                        {/* กล่องรายการอุปกรณ์ ยืดความสูงขึ้นเพื่อให้ดูง่าย */}
+                        <div className="mt-1 border rounded-lg p-2 bg-slate-50/50">
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase">รายการอุปกรณ์ (ITEM & SERIAL)</label>
-                                <button onClick={addEquip} className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
+                                <label className="text-xs font-bold text-slate-600 uppercase">รายการอุปกรณ์ ({equipments.length} รายการ)</label>
+                                <button onClick={addEquip} className="text-[10px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded shadow-sm transition-colors"><i className="fa-solid fa-plus"></i> เพิ่มอุปกรณ์</button>
                             </div>
-                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                            <div className="space-y-1.5 max-h-[30vh] overflow-y-auto custom-scrollbar pr-2 pb-1">
                                 {equipments.map((eq, i) => (
-                                    <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                        <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400 font-semibold" />
-                                        <input type="text" placeholder="Serial Number" value={eq.serial} onChange={e=>{let ne=[...equipments]; ne[i].serial=e.target.value; setEquipments(ne);}} className="flex-1 px-3 py-1 border rounded text-sm outline-none focus:border-blue-400" />
-                                        {equipments.length > 1 && <button onClick={()=>rmEquip(i)} className="text-red-400 hover:text-red-600 px-2 transition-colors"><i className="fa-solid fa-circle-xmark text-lg"></i></button>}
+                                    <div key={i} className="flex gap-2 items-center bg-white p-1.5 rounded border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
+                                        <div className="w-6 text-center text-xs font-bold text-slate-300">{i+1}.</div>
+                                        <input type="text" placeholder="ชื่ออุปกรณ์" value={eq.name} onChange={e=>{let ne=[...equipments]; ne[i].name=e.target.value; setEquipments(ne);}} className="flex-1 px-2 py-1 border-b border-transparent hover:border-slate-200 focus:border-blue-400 text-xs outline-none font-semibold" />
+                                        <div className="w-px h-4 bg-slate-200"></div>
+                                        <input type="text" placeholder="Serial Number" value={eq.serial} onChange={e=>{let ne=[...equipments]; ne[i].serial=e.target.value; setEquipments(ne);}} className="flex-1 px-2 py-1 border-b border-transparent hover:border-slate-200 focus:border-blue-400 text-xs outline-none text-indigo-700" />
+                                        {equipments.length > 1 && <button onClick={()=>rmEquip(i)} className="text-slate-300 hover:text-red-500 px-1 transition-colors"><i className="fa-solid fa-circle-xmark"></i></button>}
                                     </div>
                                 ))}
                             </div>
                         </div>
                     </div>
 
-                    <div className="w-full lg:w-[400px] flex flex-col">
+                    <div className="w-full lg:w-[350px] flex flex-col shrink-0">
                         <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                            <div className="bg-slate-800 text-white p-3 font-bold text-center flex justify-between items-center">
-                                <span><i className="fa-brands fa-line text-green-400 mr-1 text-lg"></i> Line Preview</span>
+                            <div className="bg-slate-800 text-white p-2.5 font-bold text-center flex justify-between items-center text-sm">
+                                <span><i className="fa-brands fa-line text-green-400 mr-1 text-base"></i> Line Preview</span>
                             </div>
-                            <div className="flex-1 line-preview p-4 overflow-y-auto custom-scrollbar flex flex-col">
-                                <div className="line-bubble p-3 text-sm text-slate-800 whitespace-pre-wrap font-sans leading-relaxed">
+                            <div className="flex-1 line-preview p-3 overflow-y-auto custom-scrollbar flex flex-col">
+                                <div className="line-bubble p-3 text-xs text-slate-800 whitespace-pre-wrap font-sans leading-relaxed">
                                     {generateMessage()}
                                 </div>
                             </div>
-                            <div className="p-4 bg-white border-t border-slate-200">
-                                <button onClick={submitJob} disabled={isSending} className={`w-full ${isSending ? 'bg-slate-400' : 'bg-[#06C755] hover:bg-[#05b34c]'} text-white font-bold py-3 rounded-xl shadow-md transition-transform active:scale-95 flex items-center justify-center gap-2`}>
-                                    <i className="fa-solid fa-paper-plane"></i> ยืนยันการจ่ายงาน & ส่งข้อความ
+                            <div className="p-3 bg-white border-t border-slate-200">
+                                <button onClick={submitJob} disabled={isSending} className={`w-full ${isSending ? 'bg-slate-400' : 'bg-[#06C755] hover:bg-[#05b34c]'} text-white font-bold py-2.5 rounded-lg shadow-sm transition-transform active:scale-95 flex items-center justify-center gap-2 text-sm`}>
+                                    <i className="fa-solid fa-paper-plane"></i> จ่ายงาน & ส่ง Line
                                 </button>
-                                <button onClick={handleCopy} className="w-full mt-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded-xl text-sm transition-colors">
-                                    <i className="fa-regular fa-copy"></i> คัดลอกข้อความ
+                                <button onClick={handleCopy} className="w-full mt-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-1.5 rounded-lg text-xs transition-colors">
+                                    <i className="fa-regular fa-copy"></i> คัดลอก
                                 </button>
                             </div>
                         </div>
@@ -1010,6 +1045,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
           }, []);
 
+          // เลือกว่าจะโชว์คอลัมน์ของ Subcontract หรือ NS
           const currentColumns = tasksSubTab === 'subcontract' ? columns : nsColumns;
           const currentTasks = tasksSubTab === 'subcontract' ? tasks : nsTasks;
           
@@ -1257,7 +1293,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
 
-          // กรองข้อมูลตารางตาม Filter และยุบรวมข้อมูล NS
+          // กรองข้อมูลตารางตาม Filter และยุบรวมข้อมูล NS แบบฉลาด
           let tableTasks = [...currentTasks]; 
           if (tableFilterTeams.length > 0 && teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[teamCol])));
           if (tableFilterCID !== 'All' && cidCol) tableTasks = tableTasks.filter(t => (t[cidCol] ? String(t[cidCol]).trim() : '') === tableFilterCID);
@@ -1276,7 +1312,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           if (sortConfig.key && sortConfig.direction) tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
           if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
           
-          // --- ระบบ Grouping รวบ Circuit NO. ซ้ำให้เป็นแถวเดียว สำหรับตาราง NS ---
+          // --- ระบบ Grouping รวบ Circuit NO. ที่ซ้ำให้เป็นแถวเดียว สำหรับตาราง NS ---
           let processedTasks = tableTasks;
           const itemColMatch = currentColumns.find(c => c?.toLowerCase().includes('item name') || c?.includes('อุปกรณ์')) || '';
           const snColMatch = currentColumns.find(c => c?.toLowerCase().includes('serialno') || c?.toLowerCase().includes('serial') || c?.toLowerCase() === 'sn') || '';
@@ -1297,19 +1333,31 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   
                   const groupKey = `${cid}_${st}`.trim();
                   if (!grouped.has(groupKey)) {
-                      grouped.set(groupKey, { ...t, _groupDocs: [t.id] });
+                      grouped.set(groupKey, { 
+                          ...t, 
+                          _groupDocs: [t.id],
+                          _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
+                      });
                   } else {
                       const existing = grouped.get(groupKey);
                       existing._groupDocs.push(t.id);
-                      if (itemColMatch && t[itemColMatch]) {
-                          existing[itemColMatch] = existing[itemColMatch] ? `${existing[itemColMatch]}\n${t[itemColMatch]}` : t[itemColMatch];
-                      }
-                      if (snColMatch && t[snColMatch]) {
-                          existing[snColMatch] = existing[snColMatch] ? `${existing[snColMatch]}\n${t[snColMatch]}` : t[snColMatch];
-                      }
+                      existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
                   }
               });
-              processedTasks = Array.from(grouped.values());
+
+              // เรียงอุปกรณ์ (เอาตัวที่มี SN ขึ้นก่อน) แล้วนำกลับไปใส่คอลัมน์
+              processedTasks = Array.from(grouped.values()).map(group => {
+                  if (group._equipList && group._equipList.length > 0) {
+                      group._equipList.sort((a, b) => {
+                          const aHasSn = a.sn.trim() !== '' ? 1 : 0;
+                          const bHasSn = b.sn.trim() !== '' ? 1 : 0;
+                          return bHasSn - aHasSn; // เรียงจาก 1 ไป 0
+                      });
+                      if(itemColMatch) group[itemColMatch] = group._equipList.map(e => e.item).join('\n');
+                      if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
+                  }
+                  return group;
+              });
           }
           
           const finalTableTasks = processedTasks;
