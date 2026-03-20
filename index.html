@@ -1126,18 +1126,18 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           if (key !== '_rowIndex') {
                               let rawValue = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
                               cleanData[key] = formatSheetDate(rawValue);
-                              allCols.add(key);
-                          }
-                      });
-                      
-                      let rIndex = 0;
-                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
-                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
-                      else { const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
-                      
-                      cleanData._rowIndex = rIndex || 0;
-                      
-                      if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
+                      allCols.add(key);
+                  }
+              });
+              
+              let rIndex = 0;
+              if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
+              else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
+              else { const parsed = parseInt(doc.id.replace(/\D/g, '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
+              
+              cleanData._rowIndex = rIndex || 0;
+              
+              if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
                       else newTasks.push(cleanData);
                   });
 
@@ -1209,18 +1209,18 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           if (key !== '_rowIndex') {
                               let rawValue = typeof data[key] === 'object' && data[key] !== null && 'stringValue' in data[key] ? data[key].stringValue : data[key] ?? '';
                               cleanData[key] = formatSheetDate(rawValue);
-                              allCols.add(key);
-                          }
-                      });
-                      
-                      let rIndex = 0;
-                      if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
-                      else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
-                      else { const parsed = parseInt(doc.id.replace('task_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
-                      
-                      cleanData._rowIndex = rIndex || 0;
-                      
-                      const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
+                      allCols.add(key);
+                  }
+              });
+              
+              let rIndex = 0;
+              if (data['_rowIndex'] && data['_rowIndex'].integerValue) rIndex = parseInt(data['_rowIndex'].integerValue);
+              else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
+              else { const parsed = parseInt(doc.id.replace(/\D/g, '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
+              
+              cleanData._rowIndex = rIndex || 0;
+              
+              const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
                       if(hasData) validTasks.push(cleanData);
                   });
 
@@ -1320,6 +1320,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               
               try {
                   const targetCollectionRef = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
+                  
+                  // ⚠️ สำคัญมาก: ชื่อแท็บใน Google Sheet ต้องตรงกับตรงนี้เป๊ะๆ (ถ้าคุณเปลี่ยนชื่อแท็บใน Sheet แล้ว ให้เปลี่ยนตรงนี้ตามด้วยครับ)
                   const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
 
                   const batch = db.batch();
@@ -1333,7 +1335,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   
                   if (GAS_WEB_APP_URL) {
                       docIds.forEach(id => {
-                          const rowNum = id.replace('task_', ''); 
+                          // ใช้ Regex ดึงมาเฉพาะตัวเลขเท่านั้น ป้องกันบัคเวลา ID มีตัวหนังสือแปลกๆ เช่น "ns_task_150" จะเหลือแค่ "150"
+                          const rowNum = id.replace(/\D/g, ''); 
                           const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
                           fetch(GAS_WEB_APP_URL, {
                               method: 'POST', mode: 'no-cors',
