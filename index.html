@@ -542,6 +542,37 @@
                 if (matchedRows.length > 0) {
                     const first = matchedRows[0];
                     
+                    // --- ระบบค้นหาและจับคู่ โซน/ทีม อัตโนมัติ จากคอลัมน์ AMPHUR ---
+                    const rawAmphur = getVal(first, ['amphur', 'อำเภอ', 'เขต']) || '';
+                    let matchedZoneId = '';
+                    let matchedTeam = '';
+                    let matchedNextTeam = '';
+                    let displayDistrict = '';
+
+                    if (rawAmphur) {
+                        // ตัดคำนำหน้าออกเพื่อให้เทียบค่าได้แม่นยำขึ้น
+                        const cleanAmphur = String(rawAmphur).replace(/เขต|อำเภอ|อ\./g, '').trim().toLowerCase();
+                        const foundDistrict = allDistrictsMap.find(d => {
+                            const cleanD = d.name.replace(/เขต|อำเภอ|อ\./g, '').trim().toLowerCase();
+                            return cleanAmphur === cleanD || cleanAmphur.includes(cleanD) || cleanD.includes(cleanAmphur);
+                        });
+
+                        if (foundDistrict) {
+                            displayDistrict = foundDistrict.name;
+                            matchedZoneId = foundDistrict.zoneId;
+                            const zone = (masterData.zones || []).find(z => z.id === matchedZoneId);
+                            if (zone) {
+                                const tArr = (zone.teams || '').split(',').map(t => t.trim()).filter(Boolean);
+                                let currentQ = queueState[zone.id] || 0;
+                                matchedTeam = tArr.length > 0 ? tArr[currentQ % tArr.length] : '';
+                                matchedNextTeam = tArr.length > 0 ? tArr[(currentQ + 1) % tArr.length] : '';
+                            }
+                        } else {
+                            displayDistrict = rawAmphur; // กรณีหาไม่เจอ ให้แสดงชื่ออำเภอเดิมไปเลย
+                        }
+                    }
+                    // --------------------------------------------------------
+
                     setForm(prev => ({
                         ...prev,
                         cid: getVal(first, ['circuitno', 'cid']) || prev.cid, 
@@ -552,6 +583,10 @@
                         cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก']) || '',
                         getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ']) || '',
                         getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา']) || '',
+                        districtSearch: displayDistrict || prev.districtSearch,
+                        zoneId: matchedZoneId || prev.zoneId,
+                        team: matchedTeam || prev.team,
+                        nextTeam: matchedNextTeam || prev.nextTeam,
                         details: '' 
                     }));
 
