@@ -623,8 +623,8 @@
 
  รายละเอียดงาน: ${form.details || '-'}
 
-รายการอุปกรณ์
-${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${e.serial || '-'}`).join('\n')}
+รายการอุปกรณ์:
+${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN: ${e.serial || '-'} ]`).join('\n')}
 
  ⏭️ ผู้รับเหมาลำดับถัดไป: ${form.nextTeam || '-'}`;
             };
