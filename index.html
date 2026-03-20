@@ -43,7 +43,6 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        /* Scrollbar มินิสำหรับเซลล์ที่มีข้อมูลยาวๆ ซ้อนกัน */
         .cell-scrollbar::-webkit-scrollbar { width: 4px; }
         .cell-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .cell-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -75,9 +74,9 @@
         }
 
         /* ตรึงคอลัมน์แบบ Sticky */
-        .sticky-col-header { position: sticky; left: 0; z-index: 50; outline: 1px solid #334155; }
-        .sticky-col-cell { position: sticky; left: 0; z-index: 20; background-color: #f8fafc; outline: 1px solid #e2e8f0; }
-        .tr-hover:hover .sticky-col-cell { background-color: #f1f5f9; }
+        .sticky-col-header { position: sticky; z-index: 50; outline: 1px solid #334155; }
+        .sticky-col-cell { position: sticky; z-index: 20; background-color: #ffffff; outline: 1px solid #e2e8f0; }
+        tr:hover .sticky-col-cell { background-color: #f8fafc; }
     </style>
 </head>
 <body>
@@ -136,7 +135,6 @@
             return null;
         };
 
-        // --- Multi-Select Component ---
         const MultiSelect = ({ options, selected, onChange, placeholder = "ทั้งหมด" }) => {
             const [isOpen, setIsOpen] = useState(false);
             const dropdownRef = useRef(null);
@@ -173,7 +171,6 @@
             );
         };
 
-        // --- ColumnToggle Component ---
         const ColumnToggle = ({ columns, hiddenColumns, setHiddenColumns }) => {
             const [isOpen, setIsOpen] = useState(false);
             const dropdownRef = useRef(null);
@@ -210,7 +207,6 @@
             );
         };
 
-        // --- Chart Component ---
         const ChartComponent = ({ type, data, options }) => {
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
@@ -223,7 +219,6 @@
             return <canvas ref={chartRef} style={{ width: '100%', height: '100%' }} />;
         };
 
-        // --- Draggable FAB ---
         const DraggableFAB = ({ onClick }) => {
             const [position, setPosition] = useState(() => ({ x: typeof window !== 'undefined' ? window.innerWidth - 80 : 0, y: typeof window !== 'undefined' ? window.innerHeight - 80 : 0 }));
             const draggingRef = useRef(false);
@@ -277,7 +272,13 @@
             const [isEditing, setIsEditing] = useState(false);
             const [tempData, setTempData] = useState(masterData);
 
-            useEffect(() => { setTempData(masterData); }, [masterData]);
+            useEffect(() => { 
+                setTempData({
+                    ...masterData,
+                    nsTeams: masterData.nsTeams || ["NS_Team1"],
+                    nsStatuses: masterData.nsStatuses || ["รอตรวจสอบ"]
+                }); 
+            }, [masterData]);
 
             const handleSaveZone = (index, field, val) => {
                 const newZones = [...tempData.zones];
@@ -296,13 +297,15 @@
             };
 
             const handleSave = () => {
-                const newTeamsArr = typeof tempData.teams === 'string' 
-                    ? tempData.teams.split(',').map(t=>t.trim()).filter(Boolean) 
-                    : tempData.teams;
+                const newTeamsArr = typeof tempData.teams === 'string' ? tempData.teams.split(',').map(t=>t.trim()).filter(Boolean) : tempData.teams;
+                const newNsTeamsArr = typeof tempData.nsTeams === 'string' ? tempData.nsTeams.split('\n').map(t=>t.trim()).filter(Boolean) : tempData.nsTeams;
+                const newNsStatusesArr = typeof tempData.nsStatuses === 'string' ? tempData.nsStatuses.split('\n').map(t=>t.trim()).filter(Boolean) : tempData.nsStatuses;
 
                 const dataToSave = {
                     zones: tempData.zones,
-                    teams: newTeamsArr
+                    teams: newTeamsArr,
+                    nsTeams: newNsTeamsArr,
+                    nsStatuses: newNsStatusesArr
                 };
 
                 masterDataRef.set(dataToSave, { merge: true });
@@ -316,7 +319,7 @@
                         <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                             <div>
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900"><i className="fa-solid fa-database text-blue-600 mr-2"></i> จัดการฐานข้อมูลส่วนกลาง (Master Data)</h2>
-                                <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงานทั้งหมด</p>
+                                <p className="text-slate-500 mt-1 text-xs md:text-sm">จัดการโซน, ทีมงาน และสถานะ</p>
                             </div>
                             <div className="flex gap-2">
                                 {!isEditing ? (
@@ -325,7 +328,7 @@
                                     </button>
                                 ) : (
                                     <>
-                                        <button onClick={() => { setIsEditing(false); setTempData(masterData); }} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-semibold transition-colors text-sm">
+                                        <button onClick={() => { setIsEditing(false); setTempData({ ...masterData, nsTeams: masterData.nsTeams || [], nsStatuses: masterData.nsStatuses || [] }); }} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg font-semibold transition-colors text-sm">
                                             ยกเลิก
                                         </button>
                                         <button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-sm transition-colors text-sm flex items-center">
@@ -339,17 +342,26 @@
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <div className="lg:col-span-1 space-y-6">
                                 <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
-                                    <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-indigo-500 mr-2"></i> ฐานข้อมูลทีมงานทั้งหมด</h3>
+                                    <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-indigo-500 mr-2"></i> ฐานข้อมูลทีมงาน (Subcon)</h3>
                                     <div>
-                                        <label className="text-xs font-bold text-slate-500">รายชื่อทีม (คั่นด้วยลูกน้ำ ,)</label>
-                                        <textarea 
-                                            disabled={!isEditing}
-                                            value={Array.isArray(tempData.teams) ? tempData.teams.join(', ') : tempData.teams} 
-                                            onChange={e => setTempData({...tempData, teams: e.target.value})} 
-                                            rows="8" 
-                                            className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm disabled:bg-slate-100 disabled:text-slate-500" 
-                                            placeholder="BA, TAS, ATG, ..."></textarea>
-                                        <p className="text-[10px] text-slate-400 mt-1">ทีมงานในส่วนนี้จะถูกนำไปเป็นตัวเลือกในหน้า Assign Job</p>
+                                        <label className="text-xs font-bold text-slate-500">รายชื่อทีม Subcontract (คั่นด้วยลูกน้ำ ,)</label>
+                                        <textarea disabled={!isEditing} value={Array.isArray(tempData.teams) ? tempData.teams.join(', ') : tempData.teams} onChange={e => setTempData({...tempData, teams: e.target.value})} rows="5" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-indigo-500 text-sm disabled:bg-slate-100 disabled:text-slate-500"></textarea>
+                                    </div>
+                                </div>
+
+                                <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
+                                    <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-users-gear text-amber-500 mr-2"></i> ฐานข้อมูล NS Responsible</h3>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500">รายชื่อผู้รับผิดชอบ NS (ขึ้นบรรทัดใหม่)</label>
+                                        <textarea disabled={!isEditing} value={Array.isArray(tempData.nsTeams) ? tempData.nsTeams.join('\n') : tempData.nsTeams} onChange={e => setTempData({...tempData, nsTeams: e.target.value})} rows="4" placeholder="ทีม 1&#10;ทีม 2" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-amber-500 text-sm disabled:bg-slate-100 disabled:text-slate-500"></textarea>
+                                    </div>
+                                </div>
+
+                                <div className={`p-5 rounded-xl border shadow-sm transition-colors ${isEditing ? 'bg-white border-blue-200 ring-1 ring-blue-100' : 'bg-slate-100/50 border-slate-200'}`}>
+                                    <h3 className="font-bold text-slate-800 mb-3 flex items-center"><i className="fa-solid fa-tags text-emerald-500 mr-2"></i> ฐานข้อมูล Status JOB</h3>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500">รายชื่อ Status JOB (ขึ้นบรรทัดใหม่)</label>
+                                        <textarea disabled={!isEditing} value={Array.isArray(tempData.nsStatuses) ? tempData.nsStatuses.join('\n') : tempData.nsStatuses} onChange={e => setTempData({...tempData, nsStatuses: e.target.value})} rows="5" placeholder="รอตรวจสอบ&#10;สำเร็จ" className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-md outline-none focus:ring-2 focus:ring-emerald-500 text-sm disabled:bg-slate-100 disabled:text-slate-500"></textarea>
                                     </div>
                                 </div>
                             </div>
@@ -413,10 +425,9 @@
         };
 
         // -------------------------------------------------------------
-        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (พร้อมระบบ Magic Autofill) ---
+        // --- COMPONENT: ASSIGN JOB & LINE NOTIFY (ปรับ UI & Autofill อัจฉริยะ) ---
         // -------------------------------------------------------------
         const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks, autoAssignData, clearAutoAssignData }) => {
-            
             const getInitialFormState = () => {
                 const now = new Date();
                 return {
@@ -444,13 +455,11 @@
                 return matchedKey ? t[matchedKey] : '';
             };
 
-            // อัปเดตรายการ CID Auto-complete (ดึงเฉพาะ Circuit NO)
             const nsCidOptions = useMemo(() => {
                 const cids = nsTasks.map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
                 return [...new Set(cids)];
             }, [nsTasks]);
 
-            // --- ระบบรับคำสั่ง Direct Assign จากหน้าตาราง ---
             useEffect(() => {
                 if (autoAssignData && autoAssignData.cid) {
                     setSearchCid(autoAssignData.cid);
@@ -557,7 +566,6 @@
             const addEquip = () => setEquipments([...equipments, { name: '', serial: '' }]);
             const rmEquip = (idx) => setEquipments(equipments.filter((_, i) => i !== idx));
 
-            // ตัด Site Type ออกจากกล่อง Line Message
             const generateMessage = () => {
                 return `📌📋 [แจ้งสถานะการจ่ายงาน: Remove-Equipment]
 ---------------------------
@@ -655,27 +663,16 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
             return (
                 <div className="absolute inset-0 p-3 md:p-6 overflow-y-auto custom-scrollbar bg-slate-100 flex flex-col lg:flex-row gap-4">
                     <div className="flex-1 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-3">
-                        
                         <div className="flex justify-between items-center border-b pb-2">
                             <h2 className="text-lg font-bold text-slate-800"><i className="fa-solid fa-clipboard-user text-blue-600 mr-2"></i> ฟอร์มมอบหมายงาน</h2>
                         </div>
 
-                        {/* กล่องเวทมนตร์ดึงข้อมูล NS อัตโนมัติ (Compact Design) */}
                         <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg shadow-sm">
                             <h3 className="text-xs font-bold text-indigo-800 mb-1.5"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i> ดึงข้อมูลอัตโนมัติจาก NS (ค้นหาด้วย CID)</h3>
                             <div className="flex flex-col sm:flex-row gap-2">
                                 <div className="flex-1 flex gap-2">
-                                    <input 
-                                        type="text" 
-                                        placeholder="พิมพ์ CIRCUIT NO..." 
-                                        value={searchCid} 
-                                        onChange={e => setSearchCid(e.target.value)} 
-                                        className="flex-1 px-3 py-1.5 rounded-md border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold shadow-inner" 
-                                        list="ns-cids-list" 
-                                    />
-                                    <datalist id="ns-cids-list">
-                                        {nsCidOptions.map((c, i) => <option key={i} value={c} />)}
-                                    </datalist>
+                                    <input type="text" placeholder="พิมพ์ CIRCUIT NO..." value={searchCid} onChange={e => setSearchCid(e.target.value)} className="flex-1 px-3 py-1.5 rounded-md border border-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-semibold shadow-inner" list="ns-cids-list" />
+                                    <datalist id="ns-cids-list">{nsCidOptions.map((c, i) => <option key={i} value={c} />)}</datalist>
                                     <select value={form.siteType} onChange={e=>setForm({...form, siteType: e.target.value})} className="px-2 py-1.5 border border-indigo-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-800 bg-white shadow-inner w-28 shrink-0">
                                         <option value="Terminate">Terminate</option>
                                         <option value="Originate">Originate</option>
@@ -685,7 +682,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
                         
-                        {/* ฟอร์มข้อมูลการจ่ายงาน (ย่อส่วนให้กระทัดรัดขึ้น) */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase">วันที่/เวลาแจ้ง</label>
@@ -721,7 +717,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
 
-                        {/* ฟิลด์ข้อมูลลูกค้าที่ผูกกับ Auto-fill (ยุบรวมบรรทัดเดียวกัน) */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border-t pt-3">
                             <div className="col-span-1 md:col-span-4 flex gap-2">
                                 <div className="flex-1">
@@ -768,7 +763,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             </div>
                         </div>
 
-                        {/* กล่องรายการอุปกรณ์ ยืดความสูงขึ้นเพื่อให้ดูง่าย */}
                         <div className="mt-1 border rounded-lg p-2 bg-slate-50/50">
                             <div className="flex justify-between items-center mb-2">
                                 <label className="text-xs font-bold text-slate-600 uppercase">รายการอุปกรณ์ ({equipments.length} รายการ)</label>
@@ -812,7 +806,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
             );
         };
 
-        // --- Firebase Setup ---
         const firebaseConfig = {
             apiKey: "AIzaSyBzHPhjjxRqcfno1QUkKUZddOPP_pota-Y",
             authDomain: "remove-equipment-tracking.firebaseapp.com",
@@ -822,7 +815,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        // ⚠️ อย่าลืมอัปเดต URL นี้หลังจาก Deploy ใหม่ทุกครั้ง ⚠️
         const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -863,8 +855,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
           const [nsColumns, setNsColumns] = useState([]); 
           const [hiddenColumns, setHiddenColumns] = useState([]); 
           const [pinnedColumns, setPinnedColumns] = useState([]); 
-          const [keyMap, setKeyMap] = useState({ date: '', status: '', team: '', company: '', time: '', contactName: '', phone: '' });
-
+          
           const [currentDate, setCurrentDate] = useState(new Date());
           const [calendarView, setCalendarView] = useState('month');
           const [dashboardView, setDashboardView] = useState('subcontract'); 
@@ -901,7 +892,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
           const [autoAssignData, setAutoAssignData] = useState(null);
 
-          // Reset pagination when filters change
           useEffect(() => {
               setCurrentPage(1);
           }, [tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, searchTerm]);
@@ -923,6 +913,17 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               setPinnedColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
           };
 
+          const getColWidth = (col) => colWidths[col] || 200; 
+
+          const getPinnedLeftPos = (colName, colsArray) => {
+              let left = 0;
+              const targetIdx = colsArray.indexOf(colName);
+              for (let i = 0; i < targetIdx; i++) {
+                  left += getColWidth(colsArray[i]);
+              }
+              return left;
+          };
+
           useEffect(() => {
               setIsLoading(true); setFirebaseError(null);
               const savedCols = localStorage.getItem('equip_tracker_columns');
@@ -936,7 +937,9 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                       const data = doc.data();
                       setMasterData({
                           zones: data.zones || defaultMasterData.zones,
-                          teams: Array.isArray(data.teams) ? data.teams : defaultMasterData.teams
+                          teams: Array.isArray(data.teams) ? data.teams : defaultMasterData.teams,
+                          nsTeams: Array.isArray(data.nsTeams) ? data.nsTeams : [],
+                          nsStatuses: Array.isArray(data.nsStatuses) ? data.nsStatuses : []
                       });
                       if (data.queue) setQueueState(data.queue);
                   } else {
@@ -1044,7 +1047,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   setIsLoading(false);
               });
               
-              // ดึงงาน NS
               const unsubscribeNS = nsCollectionRef.onSnapshot((snapshot) => {
                   if (snapshot.empty) return;
                   let allCols = new Set(nsColumns);
@@ -1088,46 +1090,248 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
           }, []);
 
+          // --- Inline Dependency Decoupling (No more keyMap global state issues) ---
+          
+          const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
+          const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
+
+          // 1. Dashboard Mapping
+          const dashboardTasks = dashboardView === 'subcontract' ? tasks : nsTasks;
+          const dashboardColumns = dashboardView === 'subcontract' ? columns : nsColumns;
+          const d_getCol = (keywords) => dashboardColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
+          
+          const d_statusCol = dashboardColumns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc.includes('status') || lc.includes('สถานะ')) && !lc.includes('change'); }) || dashboardColumns[dashboardColumns.length - 1] || '';
+          const d_teamCol = d_getCol(['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible']) || (dashboardColumns.length > 1 ? dashboardColumns[1] : '');
+          const d_cidCol = d_getCol(['cid', 'circuitno']);
+          const d_equipYearCol = d_getCol(['year', 'ปี']);
+          const d_overDueCol = dashboardColumns.find(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด'); }) || '';
+          const d_collectionDateCol = dashboardColumns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || d_getCol(['วันที่', 'date']) || dashboardColumns[0];
+          
+          const getDashboardTaskEffectiveDateStr = (t) => {
+              const targetCol = d_collectionDateCol; let dateStr = targetCol ? t[targetCol] : null;
+              if (!dateStr || String(dateStr).trim() === '') { const today = new Date(); dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; }
+              return dateStr;
+          };
+
+          const dashboardUniqueTeams = d_teamCol ? [...new Set(dashboardTasks.map(t => getCleanTeam(t[d_teamCol])))].sort() : [];
+          
+          const dashboardFilteredTasks = dashboardTasks.filter(t => {
+              let matchMonth = true, matchTeam = true, matchYearView = true;
+              const parsedD = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
+              let m = parsedD ? parsedD.getMonth() + 1 : null;
+              const eqYearStr = d_equipYearCol && t[d_equipYearCol] ? String(t[d_equipYearCol]).trim() : '';
+              let y = null;
+              if (eqYearStr) {
+                  const yMatch = eqYearStr.match(/\d{4}/);
+                  if (yMatch) y = parseInt(yMatch[0]); else y = parseInt(eqYearStr);
+                  if (y < 100) y += 2000; if (y > 2500) y -= 543; 
+              }
+              if (dashboardYear === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardYear === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
+              if (filterMonth !== 'All' && m !== parseInt(filterMonth)) matchMonth = false;
+              if (filterTeams.length > 0 && d_teamCol && !filterTeams.includes(getCleanTeam(t[d_teamCol]))) matchTeam = false;
+              return matchMonth && matchTeam && matchYearView;
+          });
+
+          const uniqueMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getDashboardTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
+          
+          const getStatusColor = (status, opacity = 1) => {
+              const s = status ? String(status).trim().toLowerCase() : '';
+              if (s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%')) return `rgba(16, 185, 129, ${opacity})`; 
+              if (s.includes('รอเข้าเก็บ') || s === 'รอ') return `rgba(245, 158, 11, ${opacity})`; 
+              if (s.includes('รอ') && s.includes('sub')) return `rgba(139, 92, 246, ${opacity})`; 
+              if (s.includes('รอ') && s.includes('ลูกค้า')) return `rgba(236, 72, 153, ${opacity})`; 
+              if (s.includes('รอ') && s.includes('เซลล์')) return `rgba(14, 165, 233, ${opacity})`; 
+              if (s.includes('ไม่พบ') || s.includes('หาย')) return `rgba(239, 68, 68, ${opacity})`; 
+              if (s.includes('ยกเลิก') || s.includes('cancel')) return `rgba(153, 27, 27, ${opacity})`; 
+              if (s.includes('กำลัง') || s.includes('progress')) return `rgba(59, 130, 246, ${opacity})`; 
+              if (s.includes('เลื่อน')) return `rgba(20, 184, 166, ${opacity})`; 
+              const colors = [`rgba(249, 115, 22, ${opacity})`, `rgba(99, 102, 241, ${opacity})`, `rgba(132, 204, 22, ${opacity})`, `rgba(217, 70, 239, ${opacity})`, `rgba(6, 182, 212, ${opacity})`];
+              let hash = 0; for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+              return colors[Math.abs(hash) % colors.length];
+          };
+
+          const toggleStatusFilter = (status) => { if (selectedStatuses.includes(status)) setSelectedStatuses(selectedStatuses.filter(s => s !== status)); else setSelectedStatuses([...selectedStatuses, status]); };
+          const chartFilteredTasks = dashboardFilteredTasks.filter(t => selectedStatuses.length === 0 || selectedStatuses.includes(getCleanStatus(t[d_statusCol])));
+          const totalTasksCount = dashboardFilteredTasks.length;
+          
+          const statusCounts = {};
+          if (d_statusCol) dashboardFilteredTasks.forEach(t => { const s = getCleanStatus(t[d_statusCol]); statusCounts[s] = (statusCounts[s] || 0) + 1; });
+          const getStatusRank = (status) => {
+              const s = String(status).trim().toLowerCase();
+              if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
+              if (s.includes('รอเข้าเก็บ')) return 2; if (s.includes('รอลูกค้า')) return 3; if (s.includes('รอเซลล์') || s.includes('รอ sale') || s.includes('รอเซล')) return 4;
+              if (s.includes('รอนัด')) return 5; if (s.includes('รอ sub') || s.includes('รอsub')) return 6; if (s.includes('รอ')) return 7; 
+              if (s.includes('ไม่พบ') || s.includes('หาย')) return 8; if (s.includes('เลื่อน')) return 9; if (s.includes('ยกเลิก') || s.includes('cancel')) return 10;
+              return 99; 
+          };
+          const sortedStatuses = Object.keys(statusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : statusCounts[b] - statusCounts[a]; });
+          
+          const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[d_statusCol]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
+          const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : chartStatusCounts[b] - chartStatusCounts[a]; });
+          const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
+          const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
+
+          const monthlyData = {}; for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0 };
+          chartFilteredTasks.forEach(t => {
+              const d = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
+              if (d) {
+                  let m = d.getMonth() + 1;
+                  if (m >= 1 && m <= 12) {
+                      const isCollected = getCleanStatus(t[d_statusCol]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
+                      if (isCollected) monthlyData[m].collected++; else monthlyData[m].ongoing++;
+                  }
+              }
+          });
+          const monthlyChartData = { labels: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."], datasets: [ { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } ] };
+          const monthlyChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
+
+          const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[d_statusCol])))];
+          const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[d_teamCol])))].sort();
+          const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && getCleanStatus(t[d_statusCol]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
+          const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
+
+          const overdueByTeamCounts = {}; activeTeams.forEach(t => overdueByTeamCounts[t] = 0);
+          chartFilteredTasks.forEach(t => {
+              const val = d_overDueCol ? getCleanStatus(t[d_overDueCol]) : '';
+              if (val && val !== 'ไม่ระบุสถานะ') {
+                  const m = val.match(/-?\d+/); const num = m ? parseInt(m[0], 10) : NaN;
+                  if (val.includes('เกิน') || val.includes('over') || num < 0) overdueByTeamCounts[getCleanTeam(t[d_teamCol])]++;
+              }
+          });
+          const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
+          const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
+
+
+          // 2. Table Mapping
           const currentColumns = tasksSubTab === 'subcontract' ? columns : nsColumns;
           const currentTasks = tasksSubTab === 'subcontract' ? tasks : nsTasks;
-          
           const visibleColumns = currentColumns.filter(col => !hiddenColumns.includes(col));
           const pinnedColsList = visibleColumns.filter(c => pinnedColumns.includes(c));
           const unpinnedColsList = visibleColumns.filter(c => !pinnedColumns.includes(c));
           const orderedVisibleColumns = [...pinnedColsList, ...unpinnedColsList];
 
-          const dashboardTasks = dashboardView === 'subcontract' ? tasks : nsTasks;
-          const dashboardColumns = dashboardView === 'subcontract' ? columns : nsColumns;
+          const t_getCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
+          const t_statusCol = currentColumns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc.includes('status') || lc.includes('สถานะ')) && !lc.includes('change'); }) || currentColumns[currentColumns.length - 1] || '';
+          const t_teamCol = t_getCol(['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible']) || (currentColumns.length > 1 ? currentColumns[1] : '');
+          const t_cidCol = t_getCol(['cid', 'circuitno']);
+          const t_equipYearCol = t_getCol(['year', 'ปี']);
+          const t_overDueCol = currentColumns.find(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด'); }) || '';
+          const t_collectionDateCol = currentColumns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || t_getCol(['วันที่', 'date']) || currentColumns[0];
 
-          useEffect(() => {
-              if (currentColumns.length > 0) {
-                  const findCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().includes(kw.toLowerCase()))) || '';
-                  const colB = currentColumns.length > 1 ? currentColumns[1] : '';
-                  const colC = currentColumns.length > 2 ? currentColumns[2] : '';
-                  const colG = currentColumns.length > 6 ? currentColumns[6] : '';
-                  
-                  const statusCol = currentColumns.find(c => {
-                      const lc = c?.toLowerCase().replace(/\s+/g, '') || '';
-                      return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change');
-                  }) || currentColumns[currentColumns.length - 1] || '';
+          const tableUniqueTeams = t_teamCol ? [...new Set(currentTasks.map(t => getCleanTeam(t[t_teamCol])))].sort() : [];
+          const tableUniqueStatuses = t_statusCol ? [...new Set(currentTasks.map(t => getCleanStatus(t[t_statusCol])))].sort() : [];
+          const tableUniqueColMonths = [...new Set(currentTasks.map(t => { const d = parseDateHelper(t_collectionDateCol ? t[t_collectionDateCol] : null); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
+          const tableUniqueYears = t_equipYearCol ? [...new Set(currentTasks.map(t => t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
 
-                  const contactColName = findCol(['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ']);
-                  const phoneColName = currentColumns.find(c => c !== contactColName && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || findCol(['เบอร์', 'โทร', 'tel', 'phone']);
-                  const timeColName = currentColumns.find(c => {
-                      const lc = c?.toLowerCase() || '';
-                      return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time') || lc.includes('นัด'));
-                  }) || colG;
-                  const dateColName = currentColumns.find(c => {
-                      const lc = c?.toLowerCase() || '';
-                      return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('วันที่เข้าเก็บ') || lc.includes('วันที่') || lc.includes('date'));
-                  }) || currentColumns[0];
+          // --- ใช้ useMemo คำนวณตาราง และใส่ Pagination ---
+          const finalTableTasks = useMemo(() => {
+              let tableTasks = [...currentTasks]; 
 
-                  setKeyMap({
-                      colB, colC, date: dateColName, status: statusCol, team: findCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || colB,
-                      company: findCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company']) || colC, time: timeColName, contactName: contactColName, phone: phoneColName
+              if (tableFilterTeams.length > 0 && t_teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[t_teamCol])));
+              if (tableFilterCID !== 'All' && t_cidCol) tableTasks = tableTasks.filter(t => (t[t_cidCol] ? String(t[t_cidCol]).trim() : '') === tableFilterCID);
+              if (tableFilterYear !== 'All' && t_equipYearCol) tableTasks = tableTasks.filter(t => (t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : '') === tableFilterYear);
+              if (tableFilterStatus !== 'All' && t_statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[t_statusCol]) === tableFilterStatus);
+              if (tableFilterDate !== 'All') { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(t_collectionDateCol ? t[t_collectionDateCol] : null); return d && (d.getMonth() + 1).toString() === tableFilterDate; }); }
+              if (tableFilterOverdue !== 'All' && t_overDueCol) {
+                  tableTasks = tableTasks.filter(t => {
+                      const cleanVal = getCleanStatus(t[t_overDueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
+                      const match = cleanVal.match(/-?\d+/); const num = match ? parseInt(match[0], 10) : NaN;
+                      const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
+                      const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
+                      if (tableFilterOverdue === 'เกินกำหนด') return isOverdue; if (tableFilterOverdue === 'ครบกำหนด') return isDue; return !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
                   });
               }
-          }, [currentColumns]);
+              
+              if (sortConfig.key && sortConfig.direction) {
+                  tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
+              } else {
+                  tableTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
+              }
+              
+              if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
+              
+              let processedTasks = tableTasks;
+              
+              const itemColMatch = t_getCol(['itemname', 'อุปกรณ์']);
+              const snColMatch = t_getCol(['serialno', 'serial', 'sn']);
+              const siteTypeColMatch = t_getCol(['sitetype', 'site']);
+
+              if (tasksSubTab === 'ns') {
+                  const grouped = new Map();
+                  processedTasks.forEach(t => {
+                      const cid = t_cidCol ? t[t_cidCol] : '';
+                      const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
+                      
+                      if (!cid || String(cid).trim() === '') {
+                          grouped.set(t.id, { ...t, _groupDocs: [t.id] });
+                          return;
+                      }
+                      
+                      const groupKey = `${cid}_${st}`.trim();
+                      if (!grouped.has(groupKey)) {
+                          grouped.set(groupKey, { 
+                              ...t, 
+                              _groupDocs: [t.id],
+                              _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
+                          });
+                      } else {
+                          const existing = grouped.get(groupKey);
+                          existing._groupDocs.push(t.id);
+                          existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
+                      }
+                  });
+
+                  processedTasks = Array.from(grouped.values()).map(group => {
+                      if (group._equipList && group._equipList.length > 0) {
+                          group._equipList.sort((a, b) => {
+                              const aHasSn = a.sn.trim() !== '' ? 1 : 0;
+                              const bHasSn = b.sn.trim() !== '' ? 1 : 0;
+                              return bHasSn - aHasSn;
+                          });
+                          if(itemColMatch) group[itemColMatch] = group._equipList.map(e => e.item).join('\n');
+                          if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
+                      }
+                      return group;
+                  });
+              }
+              
+              return processedTasks;
+          }, [currentTasks, currentColumns, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, sortConfig, searchTerm]);
+
+          const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil(finalTableTasks.length / rowsPerPage);
+          const paginatedTasks = rowsPerPage === 'All' ? finalTableTasks : finalTableTasks.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+          // 3. Calendar Mapping (Always uses Subcontract data)
+          const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+          const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+          const navigateCalendar = (dir) => { const nd = new Date(currentDate); if (calendarView === 'month') nd.setMonth(nd.getMonth() + dir); else if (calendarView === 'week') nd.setDate(nd.getDate() + (dir * 7)); else nd.setDate(nd.getDate() + dir); setCurrentDate(nd); };
+          
+          const isSameDate = (dateStr, dateObj) => {
+              const d = parseDateHelper(dateStr);
+              if (!d || !dateObj) return false;
+              return d.getDate() === dateObj.getDate() && d.getMonth() === dateObj.getMonth() && d.getFullYear() === dateObj.getFullYear();
+          };
+
+          const getTasksForDateObj = (dateObj) => {
+              if (!dateObj) return [];
+              
+              const calStatusCol = columns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc.includes('status') || lc.includes('สถานะ')) && !lc.includes('change'); }) || columns[columns.length - 1] || '';
+              const calTeamCol = columns.find(c => ['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns.length > 1 ? columns[1] : '');
+              const calCompCol = columns.find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns.length > 2 ? columns[2] : '');
+              const calTimeCol = columns.find(c => { const lc = c?.toLowerCase() || ''; return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time')); }) || (columns.length > 6 ? columns[6] : '');
+              const calDateCol = columns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || columns.find(c => c?.toLowerCase().includes('วันที่') || c?.toLowerCase().includes('date')) || columns[0];
+
+              return tasks.filter(t => isSameDate(calDateCol ? t[calDateCol] : null, dateObj)).sort((a, b) => {
+                  const sA = getCleanStatus(a[calStatusCol]).toLowerCase(), sB = getCleanStatus(b[calStatusCol]).toLowerCase();
+                  const isDA = sA.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0; const isDB = sB.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0;
+                  if (isDA !== isDB) return isDA - isDB; 
+                  const pT = (str) => { const m = str.match(/(\d{1,2}):(\d{2})/); return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 9999; };
+                  return pT(a[calTimeCol] ? String(a[calTimeCol]).trim() : '') - pT(b[calTimeCol] ? String(b[calTimeCol]).trim() : '');
+              }).map(t => ({...t, _calStatusCol: calStatusCol, _calTeamCol: calTeamCol, _calCompCol: calCompCol, _calTimeCol: calTimeCol, _calDateCol: calDateCol}));
+          };
+          
+          const monthSlots = [...Array(getFirstDayOfMonth(currentDate.getFullYear(), currentDate.getMonth())).fill(null), ...Array.from({length: getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth())}, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1))];
+          const weekSlots = Array.from({length: 7}, (_, i) => { const d = new Date(currentDate); d.setDate(d.getDate() - d.getDay() + i); return d; });
 
           useEffect(() => {
               if (showHistoryModal) {
@@ -1139,14 +1343,26 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
               }
           }, [showHistoryModal]);
 
-          const handleMouseDown = (e, col) => {
-              e.preventDefault(); e.stopPropagation(); 
-              const startX = e.pageX; const startWidth = e.currentTarget.parentElement.getBoundingClientRect().width;
-              const onMouseMove = (me) => setColWidths(prev => ({ ...prev, [col]: Math.max(50, startWidth + (me.pageX - startX)) }));
-              const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
-              document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
+          const handleCellDoubleClick = (e, cellId) => {
+              setEditingCell(cellId); const el = e.target;
+              setTimeout(() => {
+                  el.focus();
+                  if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
+                      const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
+                      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+                  }
+              }, 10);
           };
-          const handleDoubleClickResize = (col) => setColWidths(prev => { const n = { ...prev }; delete n[col]; return n; });
+
+          const handleMouseMove = (e, task) => {
+              const tooltipWidth = 320, tooltipHeight = Math.min(350, window.innerHeight - 40); 
+              let x = e.clientX + 15, y = e.clientY + 15;
+              if (x + tooltipWidth > window.innerWidth) x = e.clientX - tooltipWidth - 15;
+              if (y + tooltipHeight > window.innerHeight) y = e.clientY - tooltipHeight - 15;
+              setTooltipData({ visible: true, task, x: Math.max(10, x), y: Math.max(10, y) });
+          };
+          const handleMouseLeave = () => setTooltipData({ visible: false, task: null, x: 0, y: 0 });
+
           const handleSort = (key) => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' });
 
           const resetFilters = () => {
@@ -1195,7 +1411,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   });
                   await batch.commit();
 
-                  await historyRef.add({ taskId: docIds[0], company: taskObj[keyMap.company] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length });
+                  const cCompCol = currentColumns.find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || '';
+                  await historyRef.add({ taskId: docIds[0], company: taskObj[cCompCol] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length });
                   
                   if (GAS_WEB_APP_URL) {
                       docIds.forEach(id => {
@@ -1215,257 +1432,6 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                   return false;
               }
           };
-
-          const handleCellDoubleClick = (e, cellId) => {
-              setEditingCell(cellId); const el = e.target;
-              setTimeout(() => {
-                  el.focus();
-                  if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
-                      const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
-                      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-                  }
-              }, 10);
-          };
-
-          const handleMouseMove = (e, task) => {
-              const tooltipWidth = 320, tooltipHeight = Math.min(350, window.innerHeight - 40); 
-              let x = e.clientX + 15, y = e.clientY + 15;
-              if (x + tooltipWidth > window.innerWidth) x = e.clientX - tooltipWidth - 15;
-              if (y + tooltipHeight > window.innerHeight) y = e.clientY - tooltipHeight - 15;
-              setTooltipData({ visible: true, task, x: Math.max(10, x), y: Math.max(10, y) });
-          };
-          const handleMouseLeave = () => setTooltipData({ visible: false, task: null, x: 0, y: 0 });
-
-          const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
-          const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
-
-          const cidCol = dashboardColumns.find(c => c?.toLowerCase().includes('cid')) || '';
-          const equipYearCol = dashboardColumns.find(c => c?.toLowerCase().includes('year') || c?.includes('ปี')) || '';
-          const noteCol = currentColumns.find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
-          const overDueCol = dashboardColumns.find(c => { const lowerC = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lowerC.includes('นัดหมายลูกค้า') || lowerC.includes('over3') || lowerC.includes('เกินกำหนด'); }) || '';
-          const getCollectionDateCol = () => dashboardColumns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ'));
-          const getTaskEffectiveDateStr = (t) => {
-              const targetCol = getCollectionDateCol(); let dateStr = targetCol ? t[targetCol] : null;
-              if (!dateStr || String(dateStr).trim() === '') { const today = new Date(); dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; }
-              return dateStr;
-          };
-
-          const uniqueTeams = keyMap.team ? [...new Set(dashboardTasks.map(t => getCleanTeam(t[keyMap.team])))].sort() : [];
-          
-          const baseFilteredTasks = dashboardTasks.filter(t => {
-              let matchMonth = true, matchTeam = true, matchYearView = true;
-              const parsedD = parseDateHelper(getTaskEffectiveDateStr(t));
-              let m = parsedD ? parsedD.getMonth() + 1 : null;
-              const eqYearStr = equipYearCol && t[equipYearCol] ? String(t[equipYearCol]).trim() : '';
-              let y = null;
-              if (eqYearStr) {
-                  const yMatch = eqYearStr.match(/\d{4}/);
-                  if (yMatch) y = parseInt(yMatch[0]); else y = parseInt(eqYearStr);
-                  if (y < 100) y += 2000; if (y > 2500) y -= 543; 
-              }
-              if (dashboardYear === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardYear === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
-              if (filterMonth !== 'All' && m !== parseInt(filterMonth)) matchMonth = false;
-              if (filterTeams.length > 0 && keyMap.team && !filterTeams.includes(getCleanTeam(t[keyMap.team]))) matchTeam = false;
-              return matchMonth && matchTeam && matchYearView;
-          });
-
-          const uniqueMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
-          const uniqueColMonths = [...new Set(dashboardTasks.map(t => { const d = parseDateHelper(getCollectionDateCol() ? t[getCollectionDateCol()] : t[keyMap.date]); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
-          const uniqueCIDs = cidCol ? [...new Set(dashboardTasks.map(t => t[cidCol] ? String(t[cidCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueDates = keyMap.date ? [...new Set(dashboardTasks.map(t => t[keyMap.date] ? String(t[keyMap.date]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueYears = equipYearCol ? [...new Set(dashboardTasks.map(t => t[equipYearCol] ? String(t[equipYearCol]).trim() : '').filter(Boolean))].sort() : [];
-          const uniqueStatuses = keyMap.status ? [...new Set(dashboardTasks.map(t => getCleanStatus(t[keyMap.status])))].sort() : [];
-
-          const getStatusColor = (status, opacity = 1) => {
-              const s = status ? String(status).trim().toLowerCase() : '';
-              if (s.includes('สำเร็จ') || s.includes('เรียบร้อย') || s.includes('complete') || s.includes('done') || s.includes('100%')) return `rgba(16, 185, 129, ${opacity})`; 
-              if (s.includes('รอเข้าเก็บ') || s === 'รอ') return `rgba(245, 158, 11, ${opacity})`; 
-              if (s.includes('รอ') && s.includes('sub')) return `rgba(139, 92, 246, ${opacity})`; 
-              if (s.includes('รอ') && s.includes('ลูกค้า')) return `rgba(236, 72, 153, ${opacity})`; 
-              if (s.includes('รอ') && s.includes('เซลล์')) return `rgba(14, 165, 233, ${opacity})`; 
-              if (s.includes('ไม่พบ') || s.includes('หาย')) return `rgba(239, 68, 68, ${opacity})`; 
-              if (s.includes('ยกเลิก') || s.includes('cancel')) return `rgba(153, 27, 27, ${opacity})`; 
-              if (s.includes('กำลัง') || s.includes('progress')) return `rgba(59, 130, 246, ${opacity})`; 
-              if (s.includes('เลื่อน')) return `rgba(20, 184, 166, ${opacity})`; 
-              const colors = [`rgba(249, 115, 22, ${opacity})`, `rgba(99, 102, 241, ${opacity})`, `rgba(132, 204, 22, ${opacity})`, `rgba(217, 70, 239, ${opacity})`, `rgba(6, 182, 212, ${opacity})`];
-              let hash = 0; for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
-              return colors[Math.abs(hash) % colors.length];
-          };
-
-          const toggleStatusFilter = (status) => { if (selectedStatuses.includes(status)) setSelectedStatuses(selectedStatuses.filter(s => s !== status)); else setSelectedStatuses([...selectedStatuses, status]); };
-          const chartFilteredTasks = baseFilteredTasks.filter(t => selectedStatuses.length === 0 || selectedStatuses.includes(getCleanStatus(t[keyMap.status])));
-          const totalTasksCount = baseFilteredTasks.length;
-          
-          const statusCounts = {};
-          if (keyMap.status) baseFilteredTasks.forEach(t => { const s = getCleanStatus(t[keyMap.status]); statusCounts[s] = (statusCounts[s] || 0) + 1; });
-          const getStatusRank = (status) => {
-              const s = String(status).trim().toLowerCase();
-              if (s.includes('เก็บเรียบร้อย') || s.includes('สำเร็จ') || s.includes('complete') || s.includes('done') || s.includes('100%')) return 1;
-              if (s.includes('รอเข้าเก็บ')) return 2; if (s.includes('รอลูกค้า')) return 3; if (s.includes('รอเซลล์') || s.includes('รอ sale') || s.includes('รอเซล')) return 4;
-              if (s.includes('รอนัด')) return 5; if (s.includes('รอ sub') || s.includes('รอsub')) return 6; if (s.includes('รอ')) return 7; 
-              if (s.includes('ไม่พบ') || s.includes('หาย')) return 8; if (s.includes('เลื่อน')) return 9; if (s.includes('ยกเลิก') || s.includes('cancel')) return 10;
-              return 99; 
-          };
-          const sortedStatuses = Object.keys(statusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : statusCounts[b] - statusCounts[a]; });
-          
-          const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[keyMap.status]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
-          const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : chartStatusCounts[b] - chartStatusCounts[a]; });
-          const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
-          const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
-
-          const monthlyData = {}; for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0 };
-          chartFilteredTasks.forEach(t => {
-              const d = parseDateHelper(getTaskEffectiveDateStr(t));
-              if (d) {
-                  let m = d.getMonth() + 1;
-                  if (m >= 1 && m <= 12) {
-                      const isCollected = getCleanStatus(t[keyMap.status]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
-                      if (isCollected) monthlyData[m].collected++; else monthlyData[m].ongoing++;
-                  }
-              }
-          });
-          const monthlyChartData = { labels: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."], datasets: [ { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } ] };
-          const monthlyChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
-
-          const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[keyMap.status])))];
-          const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[keyMap.team])))].sort();
-          const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[keyMap.team]) === team && getCleanStatus(t[keyMap.status]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
-          const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
-
-          const overdueByTeamCounts = {}; activeTeams.forEach(t => overdueByTeamCounts[t] = 0);
-          chartFilteredTasks.forEach(t => {
-              const val = overDueCol ? getCleanStatus(t[overDueCol]) : '';
-              if (val && val !== 'ไม่ระบุสถานะ') {
-                  const m = val.match(/-?\d+/); const num = m ? parseInt(m[0], 10) : NaN;
-                  if (val.includes('เกิน') || val.includes('over') || num < 0) overdueByTeamCounts[getCleanTeam(t[keyMap.team])]++;
-              }
-          });
-          const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
-          const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
-
-          // --- ใช้ useMemo คำนวณตาราง และใส่ Pagination ---
-          const finalTableTasks = useMemo(() => {
-              let tableTasks = [...currentTasks]; 
-              
-              const getCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
-              const localTeamCol = getCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || (currentColumns.length > 1 ? currentColumns[1] : '');
-              const localCidCol = getCol(['cid', 'circuitno']) || '';
-              const localYearCol = getCol(['year', 'ปี']) || '';
-              const localStatusCol = currentColumns.find(c => {
-                  const lc = c?.toLowerCase().replace(/\s+/g, '') || '';
-                  return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change');
-              }) || currentColumns[currentColumns.length - 1] || '';
-              const localDateCol = getCol(['วันที่เข้าเก็บ']) || getCol(['วันที่', 'date']) || currentColumns[0];
-              const localOverdueCol = getCol(['นัดหมายลูกค้า', 'over3', 'เกินกำหนด']) || '';
-
-              if (tableFilterTeams.length > 0 && localTeamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[localTeamCol])));
-              if (tableFilterCID !== 'All' && localCidCol) tableTasks = tableTasks.filter(t => (t[localCidCol] ? String(t[localCidCol]).trim() : '') === tableFilterCID);
-              if (tableFilterYear !== 'All' && localYearCol) tableTasks = tableTasks.filter(t => (t[localYearCol] ? String(t[localYearCol]).trim() : '') === tableFilterYear);
-              if (tableFilterStatus !== 'All' && localStatusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[localStatusCol]) === tableFilterStatus);
-              if (tableFilterDate !== 'All') { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(localDateCol ? t[localDateCol] : null); return d && (d.getMonth() + 1).toString() === tableFilterDate; }); }
-              if (tableFilterOverdue !== 'All' && localOverdueCol) {
-                  tableTasks = tableTasks.filter(t => {
-                      const cleanVal = getCleanStatus(t[localOverdueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
-                      const match = cleanVal.match(/-?\d+/); const num = match ? parseInt(match[0], 10) : NaN;
-                      const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
-                      const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
-                      if (tableFilterOverdue === 'เกินกำหนด') return isOverdue; if (tableFilterOverdue === 'ครบกำหนด') return isDue; return !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
-                  });
-              }
-              
-              if (sortConfig.key && sortConfig.direction) {
-                  tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
-              } else {
-                  tableTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
-              }
-              
-              if (searchTerm) tableTasks = tableTasks.filter(t => Object.values(t).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
-              
-              let processedTasks = tableTasks;
-              
-              const itemColMatch = getCol(['itemname', 'อุปกรณ์']);
-              const snColMatch = getCol(['serialno', 'serial', 'sn']);
-              const siteTypeColMatch = getCol(['sitetype', 'site']);
-
-              if (tasksSubTab === 'ns') {
-                  const grouped = new Map();
-                  processedTasks.forEach(t => {
-                      const cid = localCidCol ? t[localCidCol] : '';
-                      const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
-                      
-                      if (!cid || String(cid).trim() === '') {
-                          grouped.set(t.id, { ...t, _groupDocs: [t.id] });
-                          return;
-                      }
-                      
-                      const groupKey = `${cid}_${st}`.trim();
-                      if (!grouped.has(groupKey)) {
-                          grouped.set(groupKey, { 
-                              ...t, 
-                              _groupDocs: [t.id],
-                              _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
-                          });
-                      } else {
-                          const existing = grouped.get(groupKey);
-                          existing._groupDocs.push(t.id);
-                          existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
-                      }
-                  });
-
-                  processedTasks = Array.from(grouped.values()).map(group => {
-                      if (group._equipList && group._equipList.length > 0) {
-                          group._equipList.sort((a, b) => {
-                              const aHasSn = a.sn.trim() !== '' ? 1 : 0;
-                              const bHasSn = b.sn.trim() !== '' ? 1 : 0;
-                              return bHasSn - aHasSn;
-                          });
-                          if(itemColMatch) group[itemColMatch] = group._equipList.map(e => e.item).join('\n');
-                          if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
-                      }
-                      return group;
-                  });
-              }
-              
-              return processedTasks;
-          }, [currentTasks, currentColumns, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, sortConfig, searchTerm]);
-
-          // --- Pagination Logic ---
-          const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil(finalTableTasks.length / rowsPerPage);
-          const paginatedTasks = rowsPerPage === 'All' ? finalTableTasks : finalTableTasks.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-
-          const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
-          const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
-          const navigateCalendar = (dir) => { const nd = new Date(currentDate); if (calendarView === 'month') nd.setMonth(nd.getMonth() + dir); else if (calendarView === 'week') nd.setDate(nd.getDate() + (dir * 7)); else nd.setDate(nd.getDate() + dir); setCurrentDate(nd); };
-          
-          const isSameDate = (dateStr, dateObj) => {
-              const d = parseDateHelper(dateStr);
-              if (!d || !dateObj) return false;
-              return d.getDate() === dateObj.getDate() && d.getMonth() === dateObj.getMonth() && d.getFullYear() === dateObj.getFullYear();
-          };
-
-          const getTasksForDateObj = (dateObj) => {
-              if (!dateObj) return [];
-              
-              // ใช้ columns ของ Subcontract ตายตัว
-              const calStatusCol = columns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || columns[columns.length - 1] || '';
-              const calTeamCol = columns.find(c => c?.toLowerCase().includes('ทีม') || c?.toLowerCase().includes('subcontract') || c?.toLowerCase().includes('รับผิดชอบ')) || (columns.length > 1 ? columns[1] : '');
-              const calCompCol = columns.find(c => c?.toLowerCase().includes('บริษัท') || c?.toLowerCase().includes('ลูกค้า') || c?.toLowerCase().includes('site')) || (columns.length > 2 ? columns[2] : '');
-              const calTimeCol = columns.find(c => { const lc = c?.toLowerCase() || ''; return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time')); }) || (columns.length > 6 ? columns[6] : '');
-              const calDateCol = columns.find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || columns.find(c => c?.toLowerCase().includes('วันที่') || c?.toLowerCase().includes('date')) || columns[0];
-
-              return tasks.filter(t => isSameDate(calDateCol ? t[calDateCol] : null, dateObj)).sort((a, b) => {
-                  const sA = getCleanStatus(a[calStatusCol]).toLowerCase(), sB = getCleanStatus(b[calStatusCol]).toLowerCase();
-                  const isDA = sA.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0; const isDB = sB.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0;
-                  if (isDA !== isDB) return isDA - isDB; 
-                  const pT = (str) => { const m = str.match(/(\d{1,2}):(\d{2})/); return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 9999; };
-                  return pT(a[calTimeCol] ? String(a[calTimeCol]).trim() : '') - pT(b[calTimeCol] ? String(b[calTimeCol]).trim() : '');
-              }).map(t => ({...t, _calStatusCol: calStatusCol, _calTeamCol: calTeamCol, _calCompCol: calCompCol, _calTimeCol: calTimeCol, _calDateCol: calDateCol}));
-          };
-          
-          const monthSlots = [...Array(getFirstDayOfMonth(currentDate.getFullYear(), currentDate.getMonth())).fill(null), ...Array.from({length: getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth())}, (_, i) => new Date(currentDate.getFullYear(), currentDate.getMonth(), i + 1))];
-          const weekSlots = Array.from({length: 7}, (_, i) => { const d = new Date(currentDate); d.setDate(d.getDate() - d.getDay() + i); return d; });
-
-          const skipColsInTooltip = [ keyMap.company, keyMap.team, keyMap.time, keyMap.date, ...currentColumns.filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
 
           const SidebarItem = ({ iconClass, label, id }) => (
             <button onClick={() => { startTransition(() => { setActiveTab(id); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${activeTab === id ? 'bg-blue-50 text-blue-700 font-bold shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}`}>
@@ -1525,7 +1491,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                 </nav>
                 <div className="p-4 mt-auto border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium shrink-0">
                   <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing || isPendingTransition ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
-                  {isLoading || isBackgroundSyncing || isPendingTransition ? <span className="text-blue-500 font-bold">Syncing with Sheet...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Connection Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
+                  {isLoading || isBackgroundSyncing || isPendingTransition ? <span className="text-blue-500 font-bold">Syncing...</span> : firebaseError ? <span className="text-red-500 text-xs text-center"><i className="fa-solid fa-circle-xmark"></i> Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
                 </div>
               </aside>
 
@@ -1551,7 +1517,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                           </div>
                           <div className="flex items-center gap-2 w-full md:w-auto">
                               <label className="text-xs md:text-sm font-semibold text-slate-600">ทีมงาน:</label>
-                              <div className="flex-1 md:flex-none"><MultiSelect options={uniqueTeams} selected={filterTeams} onChange={setFilterTeams} placeholder="ทีมงาน" /></div>
+                              <div className="flex-1 md:flex-none"><MultiSelect options={dashboardUniqueTeams} selected={filterTeams} onChange={setFilterTeams} placeholder="ทีมงาน" /></div>
                           </div>
                         </div>
                       </header>
@@ -1616,36 +1582,51 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         </div>
                         <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-3 border-t border-slate-100">
                             <span className="text-xs md:text-sm font-semibold text-slate-600 hidden md:inline-block"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
-                            {keyMap.team && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={uniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>}
-                            {keyMap.date && <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">เดือน (ทั้งหมด)</option>{uniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}</select>}
-                            {equipYearCol && <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">ปี (ทั้งหมด)</option>{uniqueYears.map(t => <option key={t} value={t}>{t}</option>)}</select>}
-                            {keyMap.status && <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{uniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>}
-                            {overDueCol && <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">นัดหมายลูกค้า (ทั้งหมด)</option><option value="ครบกำหนด">ครบกำหนด (0 วัน)</option><option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option><option value="เกินกำหนด">เกินกำหนด (เกิน...)</option></select>}
+                            <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>
+                            <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">เดือน (ทั้งหมด)</option>{tableUniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}</select>
+                            <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">ปี (ทั้งหมด)</option>{tableUniqueYears.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                            <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{tableUniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                            <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">นัดหมายลูกค้า (ทั้งหมด)</option><option value="ครบกำหนด">ครบกำหนด (0 วัน)</option><option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option><option value="เกินกำหนด">เกินกำหนด (เกิน...)</option></select>
                             <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={currentColumns} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
                         </div>
                     </div>
 
                     <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-0 overflow-hidden relative">
-                      <div className="flex-1 overflow-auto table-container">
+                      <div className="flex-1 overflow-auto table-container relative">
                         <table className="w-full text-left border-collapse text-sm relative" style={{ tableLayout: 'auto' }}>
                           <thead className="bg-slate-800 shadow-sm shadow-slate-800/50 sticky top-0 z-40">
                             <tr>
                               {orderedVisibleColumns.length > 0 ? orderedVisibleColumns.map((col, idx) => {
                                   const hasFixedWidth = colWidths[col] !== undefined;
                                   const isPinned = pinnedColumns.includes(col);
-                                  const isFirstPinned = isPinned && idx === 0;
-                                  const thClass = isFirstPinned ? 'sticky-col-header bg-slate-800' : 'bg-slate-800 border-r border-slate-700 hover:bg-slate-700';
+                                  const isLastPinned = isPinned && col === pinnedColsList[pinnedColsList.length - 1];
+                                  const colWidth = colWidths[col] || (isPinned ? 150 : undefined);
+
+                                  let thStyle = { whiteSpace: 'nowrap' };
+                                  if (colWidth) {
+                                      thStyle.width = colWidth;
+                                      thStyle.minWidth = colWidth;
+                                      thStyle.maxWidth = colWidth;
+                                  }
+                                  if (isPinned) {
+                                      thStyle.position = 'sticky';
+                                      thStyle.left = getPinnedLeftPos(col, orderedVisibleColumns);
+                                      thStyle.zIndex = 50;
+                                  }
+
+                                  let thClass = `p-0 align-middle relative group transition-colors select-none sortable-header bg-slate-800 border-r border-slate-700 hover:bg-slate-700`;
+                                  if (isLastPinned) thClass += ` shadow-[4px_0_6px_-1px_rgba(0,0,0,0.3)] border-r-slate-500`;
 
                                   return (
-                                      <th key={idx} className={`p-0 align-middle relative group transition-colors select-none sortable-header ${thClass}`} style={hasFixedWidth ? { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col] } : { whiteSpace: 'nowrap' }} onClick={() => handleSort(col)}>
+                                      <th key={idx} className={thClass} style={thStyle} onClick={() => handleSort(col)}>
                                           <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 overflow-hidden">
                                                 <div className="th-content text-xs md:text-sm font-semibold text-white">{col}</div>
                                                 <button onClick={(e) => { e.stopPropagation(); handlePinToggle(col); }} className={`hover:scale-110 transition-transform ${isPinned ? 'text-blue-400' : 'text-slate-500 hover:text-white'}`} title="ตรึงคอลัมน์">
                                                     <i className="fa-solid fa-thumbtack text-[10px]"></i>
                                                 </button>
                                             </div>
-                                            <div className="ml-2 text-white opacity-70">{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}</div>
+                                            <div className="ml-2 text-white opacity-70 shrink-0">{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}</div>
                                           </div>
                                           <div onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, col); }} onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClickResize(col); }} className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"><div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div></div>
                                       </th>
@@ -1667,7 +1648,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                     
                                     const getCol = (keywords) => currentColumns.find(c => keywords.some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw.toLowerCase().replace(/\s+/g,'')))) || '';
                                     const localStatusCol = currentColumns.find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || currentColumns[currentColumns.length - 1] || '';
-                                    const localTeamCol = getCol(['ทีม', 'subcontract', 'รับผิดชอบ']) || (currentColumns.length > 1 ? currentColumns[1] : '');
+                                    const localTeamCol = getCol(['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible']) || (currentColumns.length > 1 ? currentColumns[1] : '');
                                     const localOverdueCol = getCol(['นัดหมายลูกค้า', 'over3', 'เกินกำหนด']) || '';
 
                                     const isStatusCell = col === localStatusCol;
@@ -1692,7 +1673,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                     let styleObj = {};
                                     
                                     if (isStatusCell) {
-                                        styleObj = { backgroundColor: getStatusColor(cleanVal, 0.1), color: getStatusColor(cleanVal, 1), fontWeight: 'bold', borderRadius: '6px' };
+                                        styleObj = { backgroundColor: getStatusColor(cleanVal, 0.1), color: getStatusColor(cleanVal, 1), fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     } else if (isTeamCell) {
                                         const tColor = getTeamColorStyle(val); styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     } else if (isOverDueCell && cleanVal) {
@@ -1704,13 +1685,25 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                         styleObj = { backgroundColor: '#fff7ed', color: '#b45309', fontWeight: '600', borderRadius: '4px', border: '1px solid #fef08a', display: 'inline-block', padding: '2px 6px' };
                                     }
 
+                                    const isPinned = pinnedColumns.includes(col);
+                                    const isLastPinned = isPinned && col === pinnedColsList[pinnedColsList.length - 1];
+                                    const colWidth = colWidths[col] || (isPinned ? 150 : undefined);
+
                                     let tdStyle = { verticalAlign: 'top' };
-                                    if (hasFixedWidth) {
-                                        tdStyle = { width: colWidths[col], minWidth: colWidths[col], maxWidth: colWidths[col], verticalAlign: 'top' };
+                                    if (colWidth) {
+                                        tdStyle.width = colWidth;
+                                        tdStyle.minWidth = colWidth;
+                                        tdStyle.maxWidth = colWidth;
                                     } else {
                                         if (isStatusChangeCell || isContactJobCell) {
                                             tdStyle.maxWidth = '250px';
                                         }
+                                    }
+
+                                    if (isPinned) {
+                                        tdStyle.position = 'sticky';
+                                        tdStyle.left = getPinnedLeftPos(col, orderedVisibleColumns);
+                                        tdStyle.zIndex = 20;
                                     }
 
                                     let tdWhiteSpace = 'nowrap';
@@ -1729,25 +1722,56 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
 
                                     const textAlignment = isGroupedMultiLine ? 'left' : (isTeamCell || isStatusCell || isOverDueCell ? 'center' : 'left');
 
-                                    const isPinned = pinnedColumns.includes(col);
-                                    const isFirstPinned = isPinned && idx === 0;
-                                    const tdClass = isFirstPinned ? 'sticky-col-cell border-r border-slate-100' : 'border-r border-slate-100 bg-white';
+                                    let tdClass = `p-1 md:p-1.5 align-middle border-r border-slate-100`;
+                                    if (isPinned) {
+                                        tdClass += ` sticky-col-cell`;
+                                        if (isLastPinned) tdClass += ` shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)] border-r-slate-300`;
+                                    } else {
+                                        tdClass += ` bg-white`;
+                                    }
 
                                     let cellClasses = `px-2 md:px-3 py-1 outline-none editable-cell ${isEditing ? 'editing text-slate-800' : ''}`;
                                     if (isGroupedMultiLine) cellClasses += ' cell-scrollbar';
 
-                                    return (
-                                        <td key={idx} className={`p-1 md:p-1.5 align-middle ${tdClass}`} style={tdStyle}>
-                                            {isStatusCell ? (
-                                                <div className="flex items-stretch w-full transition-colors mx-auto" style={styleObj}>
+                                    if (isStatusCell) {
+                                        const statusOptions = tasksSubTab === 'ns' && masterData.nsStatuses && masterData.nsStatuses.length > 0 ? masterData.nsStatuses : tableUniqueStatuses;
+                                        return (
+                                            <td key={idx} className={tdClass} style={tdStyle}>
+                                                <div className="flex items-stretch w-full transition-colors mx-auto relative" style={styleObj}>
                                                     <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
-                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer"><i className="fa-solid fa-chevron-down text-[10px]"></i><select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task, col, e.target.value); }}><option value="" disabled></option>{uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer">
+                                                        <i className="fa-solid fa-chevron-down text-[10px]"></i>
+                                                        <select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task, col, e.target.value); }}>
+                                                            <option value="" disabled></option>
+                                                            {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
                                                 </div>
-                                            ) : (
+                                            </td>
+                                        );
+                                    } else if (isTeamCell) {
+                                        const teamOptions = tasksSubTab === 'ns' && masterData.nsTeams && masterData.nsTeams.length > 0 ? masterData.nsTeams : tableUniqueTeams;
+                                        return (
+                                            <td key={idx} className={tdClass} style={tdStyle}>
+                                                <div className="flex items-stretch w-full transition-colors mx-auto relative" style={styleObj}>
+                                                    <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
+                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer">
+                                                        <i className="fa-solid fa-chevron-down text-[10px]"></i>
+                                                        <select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChange(task, col, e.target.value); }}>
+                                                            <option value="" disabled></option>
+                                                            {teamOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        );
+                                    } else {
+                                        return (
+                                            <td key={idx} className={tdClass} style={tdStyle}>
                                                 <div contentEditable={isEditing} suppressContentEditableWarning={true} className={cellClasses} style={{ ...styleObj, minHeight: '28px', cursor: isEditing ? 'text' : 'pointer', whiteSpace: tdWhiteSpace, wordBreak: tdWordBreak, textAlign: textAlignment, lineHeight: isGroupedMultiLine ? '1.8' : '20px', overflow: tdOverflow, textOverflow: isGroupedMultiLine ? 'clip' : 'ellipsis', maxHeight: isGroupedMultiLine ? '120px' : 'none' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChange(task, col, e.target.innerText).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
-                                            )}
-                                        </td>
-                                    );
+                                            </td>
+                                        );
+                                    }
                                 })}
                                 
                                 {/* ปุ่มจ่ายงานด่วน (โชว์เฉพาะแท็บ NS) */}
