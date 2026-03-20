@@ -1534,7 +1534,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                         <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
                             <p className="text-[10px] text-slate-400 font-bold mb-1 mt-1">เลือกฐานข้อมูล:</p>
                             <button onClick={() => { startTransition(() => setDashboardView('subcontract')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Subcontract</button>
-                            <button onClick={() => { startTransition(() => setDashboardView('ns')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Region Tasks</button>
+                            <button onClick={() => { startTransition(() => setDashboardView('ns')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardView === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- NS Tasks</button>
                             
                             <p className="text-[10px] text-slate-400 font-bold mb-1 mt-2">เลือกปี:</p>
                             <button onClick={() => { startTransition(() => setDashboardYear('overview')); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${dashboardYear === 'overview' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- ภาพรวมทั้งหมด</button>
@@ -1550,7 +1550,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     {activeTab === 'tasks' && isSidebarOpen && (
                         <div className="pl-14 pr-4 space-y-1 pb-2 pt-1">
                             <button onClick={() => { startTransition(() => { setTasksSubTab('subcontract'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'subcontract' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Subcontract</button>
-                            <button onClick={() => { startTransition(() => { setTasksSubTab('ns'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for Region</button>
+                            <button onClick={() => { startTransition(() => { setTasksSubTab('ns'); setCurrentPage(1); }); if(window.innerWidth <= 1024) setIsSidebarOpen(false); }} className={`w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${tasksSubTab === 'ns' ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>- Jobs for NS</button>
                         </div>
                     )}
                   </div>
@@ -1578,7 +1578,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                             <div className="flex items-center gap-3">
                               <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block"><i className="fa-solid fa-bars"></i></button>
                               <div>
-                                  <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ {dashboardView === 'ns' ? '(Region)' : '(Subcontract)'}</h2>
+                                  <h2 className="text-xl md:text-3xl font-bold text-slate-900">ภาพรวมโครงการ {dashboardView === 'ns' ? '(NS)' : '(Subcontract)'}</h2>
                                   <p className="text-xs md:text-sm text-slate-500 mt-1">มุมมอง: <span className="font-semibold text-blue-600">{dashboardYear === 'overview' ? 'ภาพรวมทั้งหมด' : dashboardYear === '2026' ? 'ปี 2026 (ปัจจุบัน)' : 'ปี 2018 - 2025'}</span></p>
                               </div>
                             </div>
@@ -1640,7 +1640,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                     <header className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4 mb-2">
                       <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50 text-slate-600 transition-colors hidden lg:block"><i className="fa-solid fa-bars"></i></button>
-                        <div><h2 className="text-xl md:text-3xl font-bold text-slate-900">ตารางงาน {tasksSubTab === 'ns' ? '(Region Tasks)' : '(Subcontract)'}</h2></div>
+                        <div><h2 className="text-xl md:text-3xl font-bold text-slate-900">ตารางงาน {tasksSubTab === 'ns' ? '(NS Tasks)' : '(Subcontract)'}</h2></div>
                       </div>
                       <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 px-4 py-2 rounded-lg font-bold border border-indigo-200 transition-colors text-sm shadow-sm">
                           <i className="fa-solid fa-clock-rotate-left"></i> ดูประวัติการแก้ไข
@@ -1691,8 +1691,8 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                   if (isLastPinned) thClass += ` shadow-[4px_0_6px_-1px_rgba(0,0,0,0.3)] border-r-slate-500`;
 
                                   return (
-                                      <th key={idx} className={thClass} style={thStyle}>
-                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full cursor-pointer" onClick={() => handleSort(col)}>
+                                      <th key={idx} className={thClass} style={thStyle} onClick={() => handleSort(col)}>
+                                          <div className="flex items-center justify-between px-2 md:px-4 py-2 md:py-3 w-full h-full">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 <div className="th-content text-xs md:text-sm font-semibold text-white">{col}</div>
                                                 <button onClick={(e) => { e.stopPropagation(); handlePinToggle(e, col); }} className={`hover:scale-110 transition-transform ${isPinned ? 'text-blue-400' : 'text-slate-500 hover:text-white'}`} title="ตรึงคอลัมน์">
@@ -1701,7 +1701,7 @@ ${equipments.map(e => `${e.name || 'อุปกรณ์'}  Serail Number :  ${
                                             </div>
                                             <div className="ml-2 text-white opacity-70 shrink-0">{sortConfig.key === col ? (sortConfig.direction === 'asc' ? <i className="fa-solid fa-sort-up text-blue-400"></i> : <i className="fa-solid fa-sort-down text-blue-400"></i>) : <i className="fa-solid fa-sort opacity-30 text-[10px]"></i>}</div>
                                           </div>
-                                          <div onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, col); }} onClick={(e) => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"><div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div></div>
+                                          <div onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, col); }} className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize z-10 hover:bg-blue-500 flex flex-col justify-center items-center transition-colors opacity-0 group-hover:opacity-100"><div className="w-[2px] h-4 bg-white/60 rounded-full pointer-events-none"></div></div>
                                       </th>
                                   );
                               }) : <th className="p-4 text-white sticky top-0 bg-slate-800 z-30">ตารางงาน</th>}
