@@ -642,6 +642,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                         "ชื่อและเบอร์โทรลูกค้าประสานงาน": form.phone,
                         "วันที่ยกเลิกใช้งาน": form.cancelDate,
                         "สถานะ": "รอเข้าเก็บ",
+                        "วันที่เข้าเก็บ": form.getbackDate || '',
+                        "เวลาเข้าเก็บ": form.getbackTime || '',
                         "_rowIndex": 999999 
                     };
                     const equipStr = equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN: ${e.serial || '-'} ]`).join('\n');
