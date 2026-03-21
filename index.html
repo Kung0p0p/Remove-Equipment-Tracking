@@ -43,7 +43,6 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        /* Scrollbar มินิสำหรับเซลล์ที่มีข้อมูลยาวๆ ซ้อนกัน */
         .cell-scrollbar::-webkit-scrollbar { width: 4px; }
         .cell-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .cell-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -74,7 +73,6 @@
             border-style: solid; border-width: 6px 10px 6px 0; border-color: transparent #ffffff transparent transparent;
         }
 
-        /* ตรึงคอลัมน์แบบ Sticky */
         .sticky-col-header { position: sticky; z-index: 50; outline: 1px solid #334155; }
         .sticky-col-cell { position: sticky; z-index: 20; background-color: #ffffff; outline: 1px solid #e2e8f0; }
         tr:hover .sticky-col-cell { background-color: #f8fafc; }
@@ -108,9 +106,6 @@
         const db = firebase.firestore();
         db.settings({ experimentalForceLongPolling: true, useFetchStreams: false });
 
-        // โครงสร้าง Database ใหม่จะไปดึงที่ Collection ชื่อ "app_data" เพื่อใช้โควต้าเพียง 1 ครั้ง
-        const collectionRef = db.collection('tasks');
-        const nsCollectionRef = db.collection('ns_tasks');
         const historyRef = db.collection('task_history');
         const masterDataRef = db.collection('master_data').doc('zones_teams');
 
@@ -1094,7 +1089,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               const unsubMaster = masterDataRef.onSnapshot(doc => {
                   if (doc.exists && doc.data().zones) {
                       const data = doc.data();
-                      // Auto Migrate string array to object array
                       setMasterData({
                           zones: data.zones || defaultMasterData.zones,
                           teams: Array.isArray(data.teams) ? data.teams : defaultMasterData.teams,
@@ -1108,28 +1102,26 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               });
 
               // ==========================================
-              // NEW SINGLE DOCUMENT LISTENER
+              // NEW SHARDED COLLECTION LISTENER
               // ==========================================
-              const subcontractDocRef = db.collection('app_data').doc('subcontract_data');
-              const nsDocRef = db.collection('app_data').doc('ns_data');
-
-              const unsubSub = subcontractDocRef.onSnapshot((doc) => {
-                  if (!doc.exists) { setIsLoading(false); return; }
-                  const data = doc.data();
+              const unsubSub = db.collection('app_data_subcon').onSnapshot((snapshot) => {
+                  if (snapshot.empty) { setIsLoading(false); return; }
                   let allRows = [];
-                  let i = 0;
+                  let cols = [];
                   
-                  // แกะ JSON Chunks ที่ส่งมาจาก Google Sheet
-                  while (data[`chunk_${i}`] !== undefined) {
-                      try { 
-                          const chunkStr = data[`chunk_${i}`].stringValue || data[`chunk_${i}`];
-                          if (chunkStr) {
+                  snapshot.forEach(doc => {
+                      const data = doc.data();
+                      if (data.data) {
+                          try { 
+                              const chunkStr = data.data;
                               const parsedChunk = JSON.parse(chunkStr);
                               allRows = allRows.concat(parsedChunk); 
-                          }
-                      } catch(e){ console.error("Error parsing chunk", i, e); }
-                      i++;
-                  }
+                          } catch(e){ console.error("Error parsing chunk", e); }
+                      }
+                      if (data.columns && cols.length === 0) {
+                          try { cols = JSON.parse(data.columns); } catch(e){}
+                      }
+                  });
                   
                   // ฟอร์แมตวันที่
                   allRows.forEach(row => {
@@ -1143,13 +1135,9 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
                   startTransition(() => setTasks(allRows));
                   
-                  if (data.columns) {
-                      try { 
-                          const colStr = data.columns.stringValue || data.columns;
-                          const parsedCols = JSON.parse(colStr);
-                          setColumns(parsedCols); 
-                          localStorage.setItem('equip_tracker_columns', colStr);
-                      } catch(e){}
+                  if (cols.length > 0) {
+                      setColumns(cols); 
+                      localStorage.setItem('equip_tracker_columns', JSON.stringify(cols));
                   }
                   setIsLoading(false);
               }, (error) => {
@@ -1157,22 +1145,24 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   setIsLoading(false);
               });
 
-              const unsubNs = nsDocRef.onSnapshot((doc) => {
-                  if (!doc.exists) return;
-                  const data = doc.data();
+              const unsubNs = db.collection('app_data_ns').onSnapshot((snapshot) => {
+                  if (snapshot.empty) return;
                   let allRows = [];
-                  let i = 0;
+                  let cols = [];
                   
-                  while (data[`chunk_${i}`] !== undefined) {
-                      try { 
-                          const chunkStr = data[`chunk_${i}`].stringValue || data[`chunk_${i}`];
-                          if (chunkStr) {
+                  snapshot.forEach(doc => {
+                      const data = doc.data();
+                      if (data.data) {
+                          try { 
+                              const chunkStr = data.data;
                               const parsedChunk = JSON.parse(chunkStr);
                               allRows = allRows.concat(parsedChunk); 
-                          }
-                      } catch(e){}
-                      i++;
-                  }
+                          } catch(e){}
+                      }
+                      if (data.columns && cols.length === 0) {
+                          try { cols = JSON.parse(data.columns); } catch(e){}
+                      }
+                  });
                   
                   allRows.forEach(row => {
                       Object.keys(row).forEach(k => {
@@ -1184,13 +1174,9 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
                   startTransition(() => setNsTasks(allRows));
                   
-                  if (data.columns) {
-                      try { 
-                          const colStr = data.columns.stringValue || data.columns;
-                          const parsedCols = JSON.parse(colStr);
-                          setNsColumns(parsedCols); 
-                          localStorage.setItem('equip_tracker_ns_columns', colStr);
-                      } catch(e){}
+                  if (cols.length > 0) {
+                      setNsColumns(cols); 
+                      localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(cols));
                   }
               });
 
@@ -1422,6 +1408,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const snColMatch = t_getCol(['serialno', 'serial', 'sn']);
           const siteTypeColMatch = t_getCol(['sitetype', 'site']);
           const noteCol = (currentColumnsTable || []).find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
+
+          const skipColsInTooltip = [ t_teamCol, t_cidCol, t_equipYearCol, t_statusCol, t_overDueCol, t_collectionDateCol, ...(currentColumnsTable || []).filter(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('แจ้งsub') || lc.includes('วันที่แจ้ง') || lc.includes('วันที่ลงข้อมูล') || lc.includes('วันที่รับงาน') || lc.includes('ประทับเวลา') || lc.includes('timestamp') || lc.includes('เวลาแจ้ง') || lc.includes('อีเมล') || lc.includes('email') || lc.includes('mail') || lc.includes('year') || lc.includes('ปี') || lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด') || lc.includes('วันที่โทร') || lc.includes('โทรติดต่อ'); }) ].filter(Boolean);
 
           const tableUniqueTeams = t_teamCol ? [...new Set((currentTasksTable || []).map(t => getCleanTeam(t[t_teamCol])))].sort() : [];
           const tableUniqueStatuses = t_statusCol ? [...new Set((currentTasksTable || []).map(t => getCleanStatus(t[t_statusCol])))].sort() : [];
