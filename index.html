@@ -102,7 +102,7 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyN-edpUrJqTP_bY99gsLi6WlB6OMh3-8I74voaPFbPIx8XAZcbwhi7NuO6I1UXDb09/exec"; 
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -1261,17 +1261,25 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   await historyRef.add({ taskId: docIds[0], company: taskObj[cCompCol] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length });
                   
                   if (GAS_WEB_APP_URL) {
-                      docIds.forEach((id, idx) => {
-                          const rowNum = rowIndices[idx]; 
-                          if (rowNum && rowNum !== 999999) {
-                              const payloadData = JSON.stringify({ sheetName: targetSheetName, row: rowNum, field: field, value: value });
-                              fetch(GAS_WEB_APP_URL, {
-                                  method: 'POST', mode: 'no-cors',
-                                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                                  body: payloadData
-                              }).catch(e => console.error("Sync to Sheet failed:", e));
-                          }
-                      });
+                      const updates = docIds.map((id, idx) => ({
+                          row: rowIndices[idx],
+                          field: field,
+                          value: value
+                      })).filter(u => u.row && u.row !== 999999);
+
+                      if (updates.length > 0) {
+                          const payloadData = JSON.stringify({ 
+                              action: 'updateBatch',
+                              sheetName: targetSheetName, 
+                              updates: updates 
+                          });
+                          console.log("Sending batch update to GAS:", payloadData);
+                          fetch(GAS_WEB_APP_URL, {
+                              method: 'POST', mode: 'no-cors',
+                              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                              body: payloadData
+                          }).catch(e => console.error("Sync to Sheet failed:", e));
+                      }
                   }
                   return true;
               } catch (e) {
