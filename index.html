@@ -100,7 +100,8 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
+        // ⚠️ โค้ดส่วนนี้จะต้องใช้ URL การ Publish อันใหม่ล่าสุดเท่านั้น! ⚠️
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzbx3TGrOqSQgpJmWirzs0l7bRpazMBLL9xfbUV8L3Rn_9BJU8moThbheyaaT0NZVvI/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -1245,46 +1246,44 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               const oldValue = taskObj[field] || '';
               if(oldValue === value) return true;
 
-              // Optimistic UI Update (หน้าจอเปลี่ยนทันทีไม่ต้องรอโหลด)
+              // 🟢 อัปเดตหน้าจอทันที (Optimistic Update) โดยใช้ค่าล่าสุดเสมอ
               if (tasksSubTab === 'subcontract') {
-                  setTasks(tasks.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
+                  setTasks(prev => prev.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
               } else {
-                  setNsTasks(nsTasks.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
+                  setNsTasks(prev => prev.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
               }
               
+              const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
+
+              // 🟢 บันทึกประวัติลง Firebase (ทำแบบขนาน ไม่บล็อกการทำงานหลัก)
               try {
-                  const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
-
                   const cCompCol = (currentColumnsTableLocal || []).find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || '';
-                  await historyRef.add({ taskId: docIds[0], company: taskObj[cCompCol] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length });
-                  
-                  if (GAS_WEB_APP_URL) {
-                      const updates = docIds.map((id, idx) => ({
-                          row: rowIndices[idx],
-                          field: field,
-                          value: value
-                      })).filter(u => u.row && u.row !== 999999);
+                  historyRef.add({ taskId: docIds[0], company: taskObj[cCompCol] || 'Unknown', field: field, oldValue: oldValue || '', newValue: value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), groupSize: docIds.length }).catch(()=>{});
+              } catch (err) { console.warn("History log skipped"); }
 
-                      if (updates.length > 0) {
-                          const payloadData = JSON.stringify({ 
-                              action: 'updateBatch',
-                              sheetName: targetSheetName, 
-                              updates: updates 
-                          });
-                          console.log("Sending batch update to GAS:", payloadData);
-                          fetch(GAS_WEB_APP_URL, {
-                              method: 'POST', mode: 'no-cors',
-                              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                              body: payloadData
-                          }).catch(e => console.error("Sync to Sheet failed:", e));
-                      }
+              // 🟢 สั่งยิงก้อนข้อมูล (Batch) ไปอัปเดตบน Google Sheet
+              if (GAS_WEB_APP_URL) {
+                  const updates = docIds.map((id, idx) => ({
+                      row: rowIndices[idx],
+                      field: field,
+                      value: value
+                  })).filter(u => u.row && u.row !== 999999);
+
+                  if (updates.length > 0) {
+                      const payloadData = JSON.stringify({ 
+                          action: 'updateBatch', // ⚠️ คำสั่งนี้ต้องตรงกับที่เขียนไว้ใน Code.gs
+                          sheetName: targetSheetName, 
+                          updates: updates
+                      });
+                      
+                      fetch(GAS_WEB_APP_URL, {
+                          method: 'POST', mode: 'no-cors',
+                          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                          body: payloadData
+                      }).catch(e => console.error("Sync to Sheet failed:", e));
                   }
-                  return true;
-              } catch (e) {
-                  console.error("Error updating document: ", e); 
-                  alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Firebase');
-                  return false;
               }
+              return true;
           };
 
           // ================== DASHBOARD LOGIC ==================
@@ -2187,7 +2186,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                 {activeTab === 'master_data' && <MasterDataTab masterData={masterData} masterDataRef={masterDataRef} />}
 
                 {/* --- 5. หน้า ASSIGN JOB --- */}
-                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} collectionRef={collectionRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} nsTasks={nsTasks} autoAssignData={autoAssignData} clearAutoAssignData={clearAutoAssignData} />}
+                {activeTab === 'assign' && <AssignJobTab masterData={masterData} queueState={queueState} setQueueState={setQueueState} masterDataRef={masterDataRef} GAS_WEB_APP_URL={GAS_WEB_APP_URL} nsTasks={nsTasks} autoAssignData={autoAssignData} clearAutoAssignData={clearAutoAssignData} />}
 
               </main>
 
