@@ -43,6 +43,7 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        /* Scrollbar มินิสำหรับเซลล์ที่มีข้อมูลยาวๆ ซ้อนกัน */
         .cell-scrollbar::-webkit-scrollbar { width: 4px; }
         .cell-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .cell-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -73,6 +74,7 @@
             border-style: solid; border-width: 6px 10px 6px 0; border-color: transparent #ffffff transparent transparent;
         }
 
+        /* ตรึงคอลัมน์แบบ Sticky */
         .sticky-col-header { position: sticky; z-index: 50; outline: 1px solid #334155; }
         .sticky-col-cell { position: sticky; z-index: 20; background-color: #ffffff; outline: 1px solid #e2e8f0; }
         tr:hover .sticky-col-cell { background-color: #f8fafc; }
@@ -532,7 +534,7 @@
         // -------------------------------------------------------------
         // --- COMPONENT: ASSIGN JOB & LINE NOTIFY ---
         // -------------------------------------------------------------
-        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, collectionRef, GAS_WEB_APP_URL, nsTasks, autoAssignData, clearAutoAssignData }) => {
+        const AssignJobTab = ({ masterData, queueState, setQueueState, masterDataRef, GAS_WEB_APP_URL, nsTasks, autoAssignData, clearAutoAssignData }) => {
             const getInitialFormState = () => {
                 const now = new Date();
                 return {
@@ -729,7 +731,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                 setIsSending(true);
                 
                 try {
-                    const newTaskId = `task_assign_${Date.now()}`;
                     const newTaskData = {
                         "วันที่แจ้ง Subcontract": form.date,
                         "CID Customer": form.cid,
@@ -744,9 +745,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                     };
                     const equipStr = equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN: ${e.serial || '-'} ]`).join('\n');
                     newTaskData["รายละเอียดงาน"] = `[Site Type: ${form.siteType}] \n[เข้าเก็บ: ${form.getbackDate || '-'} เวลา ${form.getbackTime || '-'}] \n\n${form.details}\n\nรายการอุปกรณ์:\n${equipStr}`;
-
-                    // เราไม่ต้องเซฟลง Collection ตรงๆ แล้วสำหรับสถาปัตยกรรมใหม่ แต่ถ้ายังมีเหลืออยู่ให้ข้ามไป
-                    // ระบบใหม่จะพึ่งพา GAS_WEB_APP_URL เป็นหลัก
 
                     if (form.zoneId) {
                         const zone = (masterData.zones || []).find(z => z.id === form.zoneId);
@@ -774,8 +772,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                         const payloadData = JSON.stringify({ 
                             action: 'sendLineNotify', 
                             message: msg,
-                            taskData: newTaskData,
-                            tempTaskId: newTaskId 
+                            taskData: newTaskData
                         });
                         fetch(GAS_WEB_APP_URL, {
                             method: 'POST', mode: 'no-cors',
@@ -1089,6 +1086,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               const unsubMaster = masterDataRef.onSnapshot(doc => {
                   if (doc.exists && doc.data().zones) {
                       const data = doc.data();
+                      // Auto Migrate string array to object array
                       setMasterData({
                           zones: data.zones || defaultMasterData.zones,
                           teams: Array.isArray(data.teams) ? data.teams : defaultMasterData.teams,
@@ -1105,7 +1103,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               // NEW SHARDED COLLECTION LISTENER
               // ==========================================
               const unsubSub = db.collection('app_data_subcon').onSnapshot((snapshot) => {
-                  if (snapshot.empty) { setIsLoading(false); return; }
+                  if (snapshot.empty) { 
+                      setIsLoading(false); 
+                      return; 
+                  }
                   let allRows = [];
                   let cols = [];
                   
@@ -1146,7 +1147,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               });
 
               const unsubNs = db.collection('app_data_ns').onSnapshot((snapshot) => {
-                  if (snapshot.empty) return;
+                  if (snapshot.empty) {
+                      setIsLoading(false); 
+                      return;
+                  }
                   let allRows = [];
                   let cols = [];
                   
@@ -1178,6 +1182,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       setNsColumns(cols); 
                       localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(cols));
                   }
+                  setIsLoading(false);
+              }, (error) => {
+                  console.error(error);
+                  setIsLoading(false);
               });
 
               return () => { unsubSub(); unsubNs(); unsubMaster(); };
@@ -1491,6 +1499,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil((finalTableTasks?.length || 0) / rowsPerPage);
           const paginatedTasks = rowsPerPage === 'All' ? (finalTableTasks || []) : (finalTableTasks || []).slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
+          // ================== CALENDAR LOGIC ==================
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
               
