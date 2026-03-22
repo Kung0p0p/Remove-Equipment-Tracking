@@ -43,7 +43,6 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-        /* Scrollbar มินิสำหรับเซลล์ที่มีข้อมูลยาวๆ ซ้อนกัน */
         .cell-scrollbar::-webkit-scrollbar { width: 4px; }
         .cell-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .cell-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -74,7 +73,6 @@
             border-style: solid; border-width: 6px 10px 6px 0; border-color: transparent #ffffff transparent transparent;
         }
 
-        /* ตรึงคอลัมน์แบบ Sticky */
         .sticky-col-header { position: sticky; z-index: 50; outline: 1px solid #334155; }
         .sticky-col-cell { position: sticky; z-index: 20; background-color: #ffffff; outline: 1px solid #e2e8f0; }
         tr:hover .sticky-col-cell { background-color: #f8fafc; }
@@ -1507,7 +1505,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil((finalTableTasks?.length || 0) / rowsPerPage);
           const paginatedTasks = rowsPerPage === 'All' ? (finalTableTasks || []) : (finalTableTasks || []).slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
-          // ================== CALENDAR LOGIC ==================
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
               
