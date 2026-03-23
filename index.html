@@ -893,7 +893,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyb65u6g8cArw09TuweId1HUzX2kBi_850wA4fULOgJFum_h7IGnJAaReVLEAbxUQc/exec"; 
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -1373,18 +1373,43 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
           const dashboardFilteredTasks = (dashboardTasks || []).filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
+              
+              // 1. ดึงวันที่เป้าหมาย
               const parsedD = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
               let m = parsedD ? parsedD.getMonth() + 1 : null;
+              let dateObjYear = parsedD ? parsedD.getFullYear() : null;
+
+              // 2. พยายามหา "ปี" จากคอลัมน์ที่ระบุว่า ปี/Year ก่อน
               const eqYearStr = d_equipYearCol && t[d_equipYearCol] ? String(t[d_equipYearCol]).trim() : '';
               let y = null;
               if (eqYearStr) {
                   const yMatch = eqYearStr.match(/\d{4}/);
-                  if (yMatch) y = parseInt(yMatch[0]); else y = parseInt(eqYearStr);
-                  if (y < 100) y += 2000; if (y > 2500) y -= 543; 
+                  if (yMatch) y = parseInt(yMatch[0], 10); else y = parseInt(eqYearStr, 10);
+                  if (y < 100) y += 2000; 
+                  if (y > 2500) y -= 543; 
               }
-              if (dashboardYear === '2026') { if (y !== 2026) matchYearView = false; } else if (dashboardYear === 'history') { if (!y || y < 2018 || y > 2025) matchYearView = false; }
+
+              // 3. FALLBACK: ถ้าระบุคอลัมน์ปีไม่ได้ หรือเป็นค่าว่าง ให้ดึงปีจาก "วันที่เข้าเก็บ/วันที่แจ้ง" แทน
+              if (!y && dateObjYear) {
+                  y = dateObjYear;
+                  if (y > 2500) y -= 543;
+              }
+
+              // 4. FALLBACK สุดท้าย: ถ้าไม่มีวันที่อะไรเลย ให้ถือว่าเป็นปีปัจจุบัน (เพื่อไม่ให้งานหายไปจากระบบ)
+              if (!y) {
+                  y = new Date().getFullYear();
+              }
+
+              // 5. คัดกรองตามมุมมองปี
+              if (dashboardYear === '2026') { 
+                  if (y !== 2026) matchYearView = false; 
+              } else if (dashboardYear === 'history') { 
+                  if (y >= 2026) matchYearView = false; 
+              }
+
               if (filterMonth !== 'All' && m !== parseInt(filterMonth)) matchMonth = false;
               if (filterTeams?.length > 0 && d_teamCol && !filterTeams.includes(getCleanTeam(t[d_teamCol]))) matchTeam = false;
+              
               return matchMonth && matchTeam && matchYearView;
           });
 
