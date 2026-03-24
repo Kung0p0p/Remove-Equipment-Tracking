@@ -82,6 +82,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // ==========================================
+        // APP VERSION: v1.0.9
+        // ==========================================
+        const APP_VERSION = "1.0.9";
+
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
         }
@@ -201,6 +206,22 @@
             return fallbackTeamColors[Math.abs(hash) % fallbackTeamColors.length];
         };
 
+        const yearColors = [
+            { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' }, // sky
+            { bg: '#fce7f3', text: '#be185d', border: '#fbcfe8' }, // pink
+            { bg: '#fef9c3', text: '#a16207', border: '#fef08a' }, // yellow
+            { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, // green
+            { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, // purple
+            { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, // orange
+            { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' }  // default
+        ];
+
+        const getYearColorStyle = (yearStr) => {
+            if (!yearStr || String(yearStr).trim() === '') return yearColors[yearColors.length - 1];
+            let hash = 0; for (let i = 0; i < String(yearStr).length; i++) hash = String(yearStr).charCodeAt(i) + ((hash << 5) - hash);
+            return yearColors[Math.abs(hash) % (yearColors.length - 1)];
+        };
+
         const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
         const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
         const isSameDate = (dateStr, dateObj) => {
@@ -224,7 +245,7 @@
             return (
                 <div className="relative inline-block text-left w-full md:w-auto" ref={dropdownRef}>
                     <button type="button" onClick={() => setIsOpen(!isOpen)} className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs md:text-sm bg-white flex items-center justify-between w-full md:min-w-[140px] shadow-sm hover:bg-slate-50 transition-colors h-[38px]">
-                        <span className="truncate pr-2 text-slate-700 font-medium">{selected?.length === 0 ? `${placeholder} (${options?.length || 0})` : `เลือกแล้ว ${selected?.length || 0} ทีม`}</span>
+                        <span className="truncate pr-2 text-slate-700 font-medium">{selected?.length === 0 ? `${placeholder} (${options?.length || 0})` : `เลือกแล้ว ${selected?.length || 0} รายการ`}</span>
                         <i className={`fa-solid fa-chevron-down text-[10px] md:text-xs text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}></i>
                     </button>
                     {isOpen && (
@@ -732,6 +753,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                 
                 try {
                     const newTaskId = `task_assign_${Date.now()}`;
+                    
+                    // ปรับสูตรให้เป็นแบบ Dynamic Row (รองรับการเพิ่มบรรทัดใหม่ทุกบรรทัด)
+                    const dynamicFormula = `=LET(day_diff, (INT(INDIRECT("O"&ROW())) + 3) - IF(ISBLANK(INDIRECT("A"&ROW())), TODAY(), INT(INDIRECT("A"&ROW()))), IF(day_diff < 0, "เกินกำหนด " & ABS(day_diff) & " วัน", IF(day_diff = 0, "ครบกำหนด", "เหลือเวลา " & day_diff & " วัน")))`;
+                    
                     const newTaskData = {
                         "วันที่แจ้ง Subcontract": form.date,
                         "CID Customer": form.cid,
@@ -742,6 +767,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                         "สถานะ": "รอเข้าเก็บ",
                         "วันที่เข้าเก็บ": form.getbackDate || '',
                         "เวลาเข้าเก็บ": form.getbackTime || '',
+                        "นัดหมายลูกค้า": dynamicFormula,
                         "_rowIndex": 999999 
                     };
                     const equipStr = equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN: ${e.serial || '-'} ]`).join('\n');
@@ -834,6 +860,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     <input type="text" list="districts-list" placeholder="เช่น เขตพระนคร" value={form.districtSearch} onChange={handleDistrictInput} className="w-full mt-0.5 px-2 py-1 border rounded text-xs outline-none focus:border-amber-500" />
                                     <datalist id="districts-list">{(allDistrictsMap || []).map((d, i) => <option key={i} value={d.name} />)}</datalist>
                                     <select value={form.zoneId} onChange={(e)=>handleZoneSelect(e.target.value)} className="w-full mt-0.5 px-2 py-1 border border-amber-300 rounded text-xs font-bold text-amber-800 bg-amber-50 outline-none">
+                                        <option value="">-- เลือกโซนพื้นที่ --</option>
                                         <option value="">-- เลือกโซนพื้นที่ --</option>
                                         {(masterData.zones || []).map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
                                     </select>
@@ -977,10 +1004,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const [selectedStatuses, setSelectedStatuses] = useState([]);
           const [tableFilterTeams, setTableFilterTeams] = useState([]); 
           const [tableFilterCID, setTableFilterCID] = useState('All');
-          const [tableFilterDate, setTableFilterDate] = useState('All');
-          const [tableFilterYear, setTableFilterYear] = useState('All');
-          const [tableFilterStatus, setTableFilterStatus] = useState('All');
-          const [tableFilterOverdue, setTableFilterOverdue] = useState('All');
+          const [tableFilterDate, setTableFilterDate] = useState([]);
+          const [tableFilterYear, setTableFilterYear] = useState([]);
+          const [tableFilterStatus, setTableFilterStatus] = useState([]);
+          const [tableFilterOverdue, setTableFilterOverdue] = useState([]);
           const [searchTerm, setSearchTerm] = useState('');
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
@@ -1068,6 +1095,9 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   } else {
                       masterDataRef.set({ ...defaultMasterData, queue: {} }, { merge: true });
                   }
+              }, (error) => {
+                  console.error("MasterData Error:", error);
+                  if (error.code === 'resource-exhausted') db.disableNetwork().catch(console.error);
               });
 
               const unsubscribeTasks = collectionRef.onSnapshot((snapshot) => {
@@ -1159,7 +1189,13 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       setIsLoading(false);
                   }
               }, (error) => {
-                  console.error("Firestore Error:", error); setFirebaseError(`Firebase Error: ${error.message}`);
+                  console.error("Firestore Error:", error);
+                  if (error.code === 'resource-exhausted') {
+                      setFirebaseError('โควต้า Firebase รายวันเต็ม (Resource Exhausted) ระบบกำลังแสดงข้อมูลล่าสุดที่ถูกแคชไว้ในเครื่อง');
+                      db.disableNetwork().catch(console.error);
+                  } else {
+                      setFirebaseError(`Firebase Error: ${error.message}`);
+                  }
                   try { const savedTasks = localStorage.getItem('equip_tracker_tasks'); if (savedTasks) setTasks(JSON.parse(savedTasks) || []); } catch(e){}
                   setIsLoading(false);
               });
@@ -1196,6 +1232,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   startTransition(() => { setNsTasks(validTasks); });
+                  localStorage.setItem('equip_tracker_ns_tasks', JSON.stringify(validTasks));
 
                   if (metadataCols && Array.isArray(metadataCols)) { 
                       setNsColumns(metadataCols); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(metadataCols)); 
@@ -1205,6 +1242,15 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       setNsColumns(colsArray); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(colsArray)); 
                       initialNsCols = colsArray;
                   }
+              }, (error) => {
+                  console.error("Firestore Error (NS):", error);
+                  if (error.code === 'resource-exhausted') {
+                      setFirebaseError('โควต้า Firebase รายวันเต็ม (Resource Exhausted) ระบบกำลังแสดงข้อมูลล่าสุดที่ถูกแคชไว้ในเครื่อง');
+                      db.disableNetwork().catch(console.error);
+                  } else {
+                      setFirebaseError(`Firebase Error: ${error.message}`);
+                  }
+                  try { const savedNsTasks = localStorage.getItem('equip_tracker_ns_tasks'); if (savedNsTasks) setNsTasks(JSON.parse(savedNsTasks) || []); } catch(e){}
               });
 
               return () => { unsubscribeTasks(); unsubscribeNS(); unsubMaster(); };
@@ -1292,8 +1338,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
           const resetFilters = () => {
               setFilterMonth('All'); setFilterTeams([]); setSearchTerm(''); setTableFilterTeams([]);
-              setTableFilterDate('All'); setTableFilterYear('All'); setTableFilterStatus('All');
-              setTableFilterOverdue('All'); setSortConfig({ key: null, direction: null });
+              setTableFilterDate([]); setTableFilterYear([]); setTableFilterStatus([]);
+              setTableFilterOverdue([]); setSortConfig({ key: null, direction: null });
               setCurrentPage(1);
           };
 
@@ -1406,16 +1452,17 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
               if (tableFilterTeams?.length > 0 && t_teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[t_teamCol])));
               if (tableFilterCID !== 'All' && t_cidCol) tableTasks = tableTasks.filter(t => (t[t_cidCol] ? String(t[t_cidCol]).trim() : '') === tableFilterCID);
-              if (tableFilterYear !== 'All' && t_equipYearCol) tableTasks = tableTasks.filter(t => (t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : '') === tableFilterYear);
-              if (tableFilterStatus !== 'All' && t_statusCol) tableTasks = tableTasks.filter(t => getCleanStatus(t[t_statusCol]) === tableFilterStatus);
-              if (tableFilterDate !== 'All') { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(t_collectionDateCol ? t[t_collectionDateCol] : null); return d && (d.getMonth() + 1).toString() === tableFilterDate; }); }
-              if (tableFilterOverdue !== 'All' && t_overDueCol) {
+              if (tableFilterYear?.length > 0 && t_equipYearCol) tableTasks = tableTasks.filter(t => tableFilterYear.includes(t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : ''));
+              if (tableFilterStatus?.length > 0 && t_statusCol) tableTasks = tableTasks.filter(t => tableFilterStatus.includes(getCleanStatus(t[t_statusCol])));
+              if (tableFilterDate?.length > 0) { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(t_collectionDateCol ? t[t_collectionDateCol] : null); return d && tableFilterDate.includes(monthNames[d.getMonth()]); }); }
+              if (tableFilterOverdue?.length > 0 && t_overDueCol) {
                   tableTasks = tableTasks.filter(t => {
                       const cleanVal = getCleanStatus(t[t_overDueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
                       const match = cleanVal.match(/-?\d+/); const num = match ? parseInt(match[0], 10) : NaN;
                       const isOverdue = cleanVal.includes('เกิน') || cleanVal.includes('over') || num < 0;
                       const isDue = !isOverdue && (num === 0 || cleanVal === '0' || cleanVal.includes('ครบกำหนด'));
-                      if (tableFilterOverdue === 'เกินกำหนด') return isOverdue; if (tableFilterOverdue === 'ครบกำหนด') return isDue; return !isOverdue && !isDue && (num > 0 || cleanVal.includes('เหลือ'));
+                      const statusStr = isOverdue ? 'เกินกำหนด' : (isDue ? 'ครบกำหนด' : 'ยังไม่ครบกำหนด');
+                      return tableFilterOverdue.includes(statusStr);
                   });
               }
               
@@ -1486,6 +1533,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const d_equipYearCol = d_getCol(['year', 'ปี']) || '';
           const d_overDueCol = (dashboardColumns || []).find(c => { const lc = c?.toLowerCase()?.replace(/\s+/g, '') || ''; return lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด'); }) || '';
           const d_collectionDateCol = (dashboardColumns || []).find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || d_getCol(['วันที่', 'date']) || dashboardColumns?.[0] || '';
+          const d_siteTypeCol = d_getCol(['sitetype', 'site']) || '';
 
           const getDashboardTaskEffectiveDateStr = (t) => {
               const targetCol = d_collectionDateCol; let dateStr = targetCol ? t[targetCol] : null;
@@ -1496,7 +1544,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const dashboardUniqueTeams = d_teamCol ? [...new Set((dashboardTasks || []).map(t => getCleanTeam(t[d_teamCol])))].sort() : [];
           const dashboardUniqueMonths = [...new Set((dashboardTasks || []).map(t => { const d = parseDateHelper(getDashboardTaskEffectiveDateStr(t)); return d ? d.getMonth() + 1 : null; }).filter(Boolean))].sort((a,b)=>a-b);
 
-          const dashboardFilteredTasks = (dashboardTasks || []).filter(t => {
+          let dashboardFilteredTasks = (dashboardTasks || []).filter(t => {
               let matchMonth = true, matchTeam = true, matchYearView = true;
               const parsedD = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
               let m = parsedD ? parsedD.getMonth() + 1 : null;
@@ -1524,6 +1572,25 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               
               return matchMonth && matchTeam && matchYearView;
           });
+
+          if (dashboardView === 'ns') {
+              const grouped = new Map();
+              dashboardFilteredTasks.forEach(t => {
+                  const cid = d_cidCol ? t[d_cidCol] : '';
+                  const st = d_siteTypeCol ? t[d_siteTypeCol] : '';
+                  
+                  if (!cid || String(cid).trim() === '') {
+                      grouped.set(t.id, t);
+                      return;
+                  }
+                  
+                  const groupKey = `${cid}_${st}`.trim();
+                  if (!grouped.has(groupKey)) {
+                      grouped.set(groupKey, t);
+                  }
+              });
+              dashboardFilteredTasks = Array.from(grouped.values());
+          }
 
           const toggleStatusFilter = (status) => { if (selectedStatuses.includes(status)) setSelectedStatuses(selectedStatuses.filter(s => s !== status)); else setSelectedStatuses([...selectedStatuses, status]); };
           const chartFilteredTasks = dashboardFilteredTasks.filter(t => selectedStatuses?.length === 0 || selectedStatuses.includes(getCleanStatus(t[d_statusCol])));
@@ -1570,6 +1637,15 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
           const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
 
+          // สไตล์สำหรับตัวเลขในกราฟแบบ "ไม่มีกรอบพื้นหลัง" แต่ใช้ "ขอบตัวเลข (Text Stroke)" สีเข้มแทน เพื่อให้ตัวเลขลอยมีมิติ
+          const dlStyle = { 
+              color: '#ffffff', 
+              font: { weight: 'bold', size: 12, family: 'Prompt' }, 
+              display: (c) => c.dataset.data[c.dataIndex] > 0, 
+              textStrokeColor: 'rgba(15, 23, 42, 0.85)', // สีขอบตัวอักษร (สีกรมท่าเข้ม)
+              textStrokeWidth: 4 // ความหนาของขอบตัวอักษร
+          };
+
           const monthlyData = {}; for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0 };
           chartFilteredTasks.forEach(t => {
               const d = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
@@ -1582,12 +1658,12 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               }
           });
           const monthlyChartData = { labels: ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."], datasets: [ { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } ] };
-          const monthlyChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { color: '#fff', font: { weight: 'bold', size: 14 }, display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
+          const monthlyChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { ...dlStyle, font: { weight: 'bold', size: 13, family: 'Prompt' } } }, scales: { y: { beginAtZero: true } } };
 
           const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[d_statusCol])))];
           const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[d_teamCol])))].sort();
           const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && getCleanStatus(t[d_statusCol]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
-          const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
+          const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: dlStyle }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
 
           const overdueByTeamCounts = {}; activeTeams.forEach(t => overdueByTeamCounts[t] = 0);
           chartFilteredTasks.forEach(t => {
@@ -1598,22 +1674,23 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               }
           });
           const overdueChartData = { labels: activeTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: activeTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
-          const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: { color: '#fff', display: (c) => c.dataset.data[c.dataIndex] > 0 } }, scales: { y: { beginAtZero: true } } };
+          const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: dlStyle }, scales: { y: { beginAtZero: true } } };
 
           // ================== CALENDAR CALCULATIONS ==================
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
-              const calStatusCol = (currentColumnsTable || []).find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || currentColumnsTable?.[(currentColumnsTable?.length || 1) - 1] || '';
-              const calTeamCol = (currentColumnsTable || []).find(c => ['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (currentColumnsTable?.length > 1 ? currentColumnsTable[1] : '');
-              const calCompCol = (currentColumnsTable || []).find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (currentColumnsTable?.length > 2 ? currentColumnsTable[2] : '');
-              const calTimeCol = (currentColumnsTable || []).find(c => { const lc = c?.toLowerCase() || ''; return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time')); }) || (currentColumnsTable?.length > 6 ? currentColumnsTable[6] : '');
-              const calDateCol = (currentColumnsTable || []).find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || (currentColumnsTable || []).find(c => c?.toLowerCase().includes('วันที่') || c?.toLowerCase().includes('date')) || currentColumnsTable?.[0] || '';
-              const calCidCol = (currentColumnsTable || []).find(c => c?.toLowerCase().includes('circuit no') || c?.toLowerCase().includes('cid')) || '';
-              const calContactCol = (currentColumnsTable || []).find(c => ['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ'].some(kw => c?.toLowerCase().includes(kw))) || '';
-              const calPhoneCol = (currentColumnsTable || []).find(c => c !== calContactCol && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || '';
-              const calNoteCol = (currentColumnsTable || []).find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
+              // ฟิกซ์ให้ดึงเฉพาะคอลัมน์และข้อมูลของ Subcontract (tasks/columns) เท่านั้น
+              const calStatusCol = (columns || []).find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || columns?.[(columns?.length || 1) - 1] || '';
+              const calTeamCol = (columns || []).find(c => ['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns?.length > 1 ? columns[1] : '');
+              const calCompCol = (columns || []).find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns?.length > 2 ? columns[2] : '');
+              const calTimeCol = (columns || []).find(c => { const lc = c?.toLowerCase() || ''; return !lc.includes('ประทับเวลา') && !lc.includes('timestamp') && (lc.includes('เวลาเข้าเก็บ') || lc.includes('เวลาเก็บ') || lc.includes('เวลา') || lc.includes('time')); }) || (columns?.length > 6 ? columns[6] : '');
+              const calDateCol = (columns || []).find(c => c?.replace(/\s+/g, '').includes('วันที่เข้าเก็บ')) || (columns || []).find(c => c?.toLowerCase().includes('วันที่') || c?.toLowerCase().includes('date')) || columns?.[0] || '';
+              const calCidCol = (columns || []).find(c => c?.toLowerCase().includes('circuit no') || c?.toLowerCase().includes('cid')) || '';
+              const calContactCol = (columns || []).find(c => ['ผู้ติดต่อ', 'ติดต่อ', 'ชื่อลูกค้า', 'ประสานงาน', 'ชื่อ'].some(kw => c?.toLowerCase().includes(kw))) || '';
+              const calPhoneCol = (columns || []).find(c => c !== calContactCol && (c?.includes('เบอร์') || c?.toLowerCase().includes('tel') || c?.toLowerCase().includes('phone') || c?.includes('โทร'))) || '';
+              const calNoteCol = (columns || []).find(c => c?.includes('หมายเหตุ') || c?.toLowerCase().includes('note')) || '';
 
-              return (currentTasksTable || []).filter(t => isSameDate(calDateCol ? t[calDateCol] : null, dateObj)).sort((a, b) => {
+              return (tasks || []).filter(t => isSameDate(calDateCol ? t[calDateCol] : null, dateObj)).sort((a, b) => {
                   const sA = getCleanStatus(a[calStatusCol]).toLowerCase(), sB = getCleanStatus(b[calStatusCol]).toLowerCase();
                   const isDA = sA.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0; const isDB = sB.match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/) ? 1 : 0;
                   if (isDA !== isDB) return isDA - isDB; 
@@ -1704,9 +1781,12 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                     </button>
                 </div>
 
-                <div className="p-3 bg-slate-50 flex items-center justify-center gap-2 text-xs font-medium shrink-0 border-t border-slate-200">
-                  <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing || isPendingTransition ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
-                  {isLoading || isBackgroundSyncing || isPendingTransition ? <span className="text-blue-500 font-bold">Syncing...</span> : firebaseError ? <span className="text-red-500 text-center"><i className="fa-solid fa-circle-xmark"></i> Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
+                <div className="p-3 bg-slate-50 flex items-center justify-between gap-2 text-xs font-medium shrink-0 border-t border-slate-200">
+                  <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isLoading || isBackgroundSyncing || isPendingTransition ? 'bg-blue-400 animate-pulse' : 'bg-emerald-500'}`}></div>
+                      {isLoading || isBackgroundSyncing || isPendingTransition ? <span className="text-blue-500 font-bold">Syncing...</span> : firebaseError ? <span className="text-red-500 text-center"><i className="fa-solid fa-circle-xmark"></i> Error</span> : <span className="text-emerald-600 font-bold">Live Synced</span>}
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-bold">v{APP_VERSION}</span>
                 </div>
               </aside>
 
@@ -1755,7 +1835,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                               <div className="flex justify-between items-center mb-4"><h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-pie text-blue-600"></i> สัดส่วนสถานะงาน</h3>{selectedStatuses?.length > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Filtered</span>}</div>
                               <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[250px] md:min-h-[300px]">
                                   {chartFilteredTasks?.length > 0 ? (
-                                      <><div className="relative mx-auto flex items-center justify-center w-48 h-48 md:w-60 md:h-60"><div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"><span className="text-3xl md:text-5xl font-extrabold text-slate-800 leading-none">{chartFilteredTasks?.length || 0}</span><span className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span></div><ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} /></div><div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">{(chartSortedStatuses || []).map(s => (<div key={s} className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-600"><span className="w-2.5 md:w-3 h-2.5 md:h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>{s} <span className="text-slate-400">({chartStatusCounts[s]})</span></div>))}</div></>
+                                      <><div className="relative mx-auto flex items-center justify-center w-48 h-48 md:w-60 md:h-60"><div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"><span className="text-3xl md:text-5xl font-extrabold text-slate-800 leading-none drop-shadow-md" style={{ textShadow: '1px 2px 3px rgba(0,0,0,0.2)' }}>{chartFilteredTasks?.length || 0}</span><span className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span></div><ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} /></div><div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">{(chartSortedStatuses || []).map(s => (<div key={s} className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-600"><span className="w-2.5 md:w-3 h-2.5 md:h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>{s} <span className="text-slate-400">({chartStatusCounts[s]})</span></div>))}</div></>
                                   ) : <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูล</p>}
                               </div>
                           </div>
@@ -1798,10 +1878,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                         <div className="flex flex-wrap items-center gap-2 md:gap-3 pt-3 border-t border-slate-100">
                             <span className="text-xs md:text-sm font-semibold text-slate-600 hidden md:inline-block"><i className="fa-solid fa-filter mr-1"></i> ตัวกรอง:</span>
                             {t_teamCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueTeams} selected={tableFilterTeams} onChange={setTableFilterTeams} placeholder="ทีมงาน" /></div>}
-                            {t_collectionDateCol && <select value={tableFilterDate} onChange={e => setTableFilterDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">เดือน (ทั้งหมด)</option>{tableUniqueColMonths.map(m => <option key={m} value={m.toString()}>{monthNames[m-1]}</option>)}</select>}
-                            {t_equipYearCol && <select value={tableFilterYear} onChange={e => setTableFilterYear(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">ปี (ทั้งหมด)</option>{tableUniqueYears.map(t => <option key={t} value={t}>{t}</option>)}</select>}
-                            {t_statusCol && <select value={tableFilterStatus} onChange={e => setTableFilterStatus(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-[calc(50%-4px)] sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">Status</option>{tableUniqueStatuses.map(t => <option key={t} value={t}>{t}</option>)}</select>}
-                            {t_overDueCol && <select value={tableFilterOverdue} onChange={e => setTableFilterOverdue(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs md:text-sm bg-white outline-none w-full sm:w-auto md:max-w-[140px] truncate h-[38px]"><option value="All">นัดหมายลูกค้า (ทั้งหมด)</option><option value="ครบกำหนด">ครบกำหนด (0 วัน)</option><option value="ยังไม่ครบกำหนด">ยังไม่ครบกำหนด (เหลือ...)</option><option value="เกินกำหนด">เกินกำหนด (เกิน...)</option></select>}
+                            {t_collectionDateCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueColMonths.map(m => monthNames[m-1])} selected={tableFilterDate} onChange={setTableFilterDate} placeholder="เดือน" /></div>}
+                            {t_equipYearCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueYears} selected={tableFilterYear} onChange={setTableFilterYear} placeholder="ปี" /></div>}
+                            {t_statusCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueStatuses} selected={tableFilterStatus} onChange={setTableFilterStatus} placeholder="Status" /></div>}
+                            {t_overDueCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={['ครบกำหนด', 'ยังไม่ครบกำหนด', 'เกินกำหนด']} selected={tableFilterOverdue} onChange={setTableFilterOverdue} placeholder="นัดหมายลูกค้า" /></div>}
                             <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={currentColumnsTable} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
                         </div>
                     </div>
@@ -1865,6 +1945,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     const isTeamCell = col === t_teamCol;
                                     const isOverDueCell = col === t_overDueCol; 
                                     const isCidCell = col === t_cidCol && t_cidCol !== '';
+                                    const isEquipYearCell = col === t_equipYearCol && t_equipYearCol !== '';
                                     
                                     const isStatusChangeCell = col === statusChangeColMatch;
                                     const isContactJobCell = col === contactJobColMatch;
@@ -1882,6 +1963,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                         styleObj = { backgroundColor: getStatusColor(cleanVal, 0.1), color: getStatusColor(cleanVal, 1), fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     } else if (isTeamCell) {
                                         const tColor = getTeamColorStyle(val, masterData); styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
+                                    } else if (isEquipYearCell && cleanVal) {
+                                        const yColor = getYearColorStyle(val); styleObj = { backgroundColor: yColor.bg, color: yColor.text, border: `1px solid ${yColor.border}`, fontWeight: 'bold', textAlign: 'center', borderRadius: '6px' };
                                     } else if (isCidCell && cleanVal) {
                                         const currentTaskStatus = getCleanStatus(task[t_statusCol]);
                                         const cBg = getStatusColor(currentTaskStatus, 0.15);
@@ -1931,7 +2014,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                         tdOverflow = 'visible';
                                     }
 
-                                    const textAlignment = isGroupedMultiLine ? 'left' : (isTeamCell || isStatusCell || isOverDueCell || isCidCell ? 'center' : 'left');
+                                    const textAlignment = isGroupedMultiLine ? 'left' : (isTeamCell || isStatusCell || isEquipYearCell || isOverDueCell || isCidCell ? 'center' : 'left');
 
                                     let tdClass = `p-1 md:p-1.5 align-middle border-r border-slate-100`;
                                     if (isPinned) {
@@ -1971,6 +2054,21 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                                         <select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChangeTable(task, col, e.target.value, currentColumnsTable); }}>
                                                             <option value="" disabled></option>
                                                             {(teamOptions || []).map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        );
+                                    } else if (isEquipYearCell) {
+                                        return (
+                                            <td key={idx} className={tdClass} style={tdStyle}>
+                                                <div className="flex items-stretch w-full transition-colors mx-auto relative" style={styleObj}>
+                                                    <div contentEditable={isEditing} suppressContentEditableWarning={true} className={`flex-1 px-2 md:px-3 py-1 outline-none text-center editable-cell ${isEditing ? 'editing text-slate-800' : ''}`} style={{ minHeight: '28px', lineHeight: '20px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} onBlur={e => { handleCellChangeTable(task, col, e.target.innerText, currentColumnsTable).then(res=>{ if(res===false) e.target.innerText = val; }); setEditingCell(null); }}>{val}</div>
+                                                    <div className="relative w-5 md:w-6 flex-shrink-0 flex items-center justify-center hover:bg-black/10 rounded-r-md cursor-pointer">
+                                                        <i className="fa-solid fa-chevron-down text-[10px]"></i>
+                                                        <select className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" value="" onChange={e => { if (e.target.value) handleCellChangeTable(task, col, e.target.value, currentColumnsTable); }}>
+                                                            <option value="" disabled></option>
+                                                            {(tableUniqueYears || []).map(y => <option key={y} value={y}>{y}</option>)}
                                                         </select>
                                                     </div>
                                                 </div>
