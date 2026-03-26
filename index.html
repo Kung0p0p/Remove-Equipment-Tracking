@@ -83,9 +83,9 @@
 
     <script type="text/babel">
         // ==========================================
-        // APP VERSION: v1.0.16
+        // APP VERSION: v1.0.17
         // ==========================================
-        const APP_VERSION = "1.0.16";
+        const APP_VERSION = "1.0.17";
 
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
@@ -1444,31 +1444,42 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   await batch.commit(); 
                   
                   if (GAS_WEB_APP_URL) {
+                      let hasValidUpdate = false;
+
                       docIds.forEach((id, idx) => {
                           let rNum = rowIndices[idx];
                           
-                          // หากไม่มีค่า Row Index ชัดเจน ให้ดึงมาจากชื่อ Doc ID แทน (เช่น task_1500)
-                          if (!rNum || rNum === 999999 || rNum === 0) {
-                             const parsed = parseInt(id.replace('task_', '').replace('task_assign_', ''));
-                             if(!isNaN(parsed)) rNum = parsed;
+                          // หากไม่มีค่า Row Index ชัดเจน ให้ดึงมาจากชื่อ Doc ID แทน
+                          if (!rNum || rNum === 999999 || rNum === 0 || isNaN(parseInt(rNum))) {
+                             const parsed = parseInt(id.replace('task_', '')); // จะทำให้ task_assign_ กลายเป็น NaN
+                             if(!isNaN(parsed) && parsed > 1 && parsed <= 50000) {
+                                 rNum = parsed;
+                             } else {
+                                 rNum = null;
+                             }
                           }
 
-                          if (rNum && rNum !== 999999 && rNum > 0) {
+                          // 🛡️ Safety Boundary: ตรวจสอบเลขบรรทัดอย่างเข้มงวดที่สุด ต้องอยู่ระหว่าง 2 ถึง 50000 เท่านั้น
+                          if (rNum && rNum > 1 && rNum <= 50000) {
                               pendingUpdatesRef.current = pendingUpdatesRef.current.filter(u => !(u.row === rNum && u.field === field && u.sheetName === targetSheetName));
                               pendingUpdatesRef.current.push({ row: rNum, field: field, value: value, sheetName: targetSheetName });
+                              hasValidUpdate = true;
                           } else {
-                              console.warn(`⚠️ [Warning] ไม่สามารถ Sync งาน ${id} ลง Sheet ได้ เนื่องจากหาเลขบรรทัด (Row) ไม่เจอครับ:`, rNum);
+                              console.warn(`⚠️ [Blocked] ข้ามการส่งซิงค์ลง Sheet งาน ${id} เนื่องจากเลขบรรทัดผิดปกติ (${rNum})`);
                           }
                       });
+
+                      // ถ้าระบบตรวจสอบแล้วพบว่าบรรทัดมั่วทั้งหมด (ไม่มีแถวที่ถูกต้องเลย) ให้หยุดการส่งไปหา GAS
+                      if (!hasValidUpdate) {
+                          alert('ข้อมูลงานนี้กำลังซิงค์อยู่ หรือหาเลขบรรทัดใน Sheet ไม่พบ กรุณารอสักครู่แล้วรีเฟรชหน้าเว็บอีกครั้งครับ');
+                          return true;
+                      }
 
                       setIsBackgroundSyncing(true);
                       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
 
                       syncTimerRef.current = setTimeout(() => {
-                          if (pendingUpdatesRef.current.length === 0) {
-                              console.log('📡 [Sync] คิวว่างเปล่า ยกเลิกการส่งข้อมูล');
-                              return;
-                          }
+                          if (pendingUpdatesRef.current.length === 0) return;
 
                           const updatesToSync = [...pendingUpdatesRef.current];
                           pendingUpdatesRef.current = [];
@@ -1485,12 +1496,13 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                   action: 'updateBatch', 
                                   sheetName: sheet, 
                                   updates: updatesBySheet[sheet],
+                                  // ส่ง 3 ค่านี้แนบไปด้วยเสมอ เผื่อ GAS รันเวอร์ชันเก่า
                                   row: updatesBySheet[sheet][0].row,
                                   field: updatesBySheet[sheet][0].field,
                                   value: updatesBySheet[sheet][0].value
                               });
                               
-                              console.log('📡 [Sync to Sheet] ส่งข้อมูลสำเร็จ Payload:', payloadData);
+                              console.log('📡 [Sync to Sheet] ส่งคำสั่งสำเร็จ Payload:', payloadData);
                               
                               fetch(GAS_WEB_APP_URL, {
                                   method: 'POST', mode: 'no-cors',
