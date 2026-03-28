@@ -83,9 +83,9 @@
 
     <script type="text/babel">
         // ==========================================
-        // APP VERSION: v1.0.17
+        // APP VERSION: v1.0.20 (Reverted to v1.0.18 base + Strict Ghost Row Filter)
         // ==========================================
-        const APP_VERSION = "1.0.17";
+        const APP_VERSION = "1.0.20";
 
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
@@ -138,7 +138,9 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx0tmkVWjmmsx--jSEqzGBBZtf03VGebWbq5NmzQgnkhXfMMYqqcA2kHPGaglXbWGIQ/exec"; 
+        
+        // ⚠️ นำลิงก์ Web App URL ตัวใหม่ (ที่กดจาก New Deployment) มาวางแทนที่ลิงก์เดิมตรงนี้ครับ
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -1199,12 +1201,26 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       else newTasks.push(assignT);
                   });
 
+                  // v1.0.20: ตัวกรองแถวผีแบบเรียบง่าย (Strict Filter)
+                  // ถือว่าเป็นงานจริง เมื่อคอลัมน์ใดๆ ที่ไม่ใช่สูตร/วันที่ มีตัวหนังสืออย่างน้อย 1 ตัว
                   const validTasks = newTasks.filter(task => {
-                      return Object.keys(task).some(k => 
-                          k !== 'id' && k !== '_rowIndex' && 
-                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
-                          String(task[k]).trim() !== ''
-                      );
+                      return Object.keys(task).some(key => {
+                          if (key === 'id' || key === '_rowIndex') return false;
+                          const lowerKey = key.toLowerCase().replace(/\s+/g, '');
+                          
+                          // มองข้ามคอลัมน์ที่คาดว่าจะเป็นสูตรหรือค่า Default อัตโนมัติ
+                          if (lowerKey.includes('นัดหมาย') || lowerKey.includes('over') || 
+                              lowerKey.includes('เกินกำหนด') || lowerKey.includes('สถานะ') || 
+                              lowerKey.includes('status') || lowerKey.includes('วันที่') || 
+                              lowerKey.includes('เวลา') || lowerKey.includes('date') || 
+                              lowerKey.includes('time')) {
+                              return false;
+                          }
+                          
+                          const val = String(task[key]).trim();
+                          // ต้องไม่ใช่ค่าว่าง ขีด หรือข้อความ Default
+                          return val !== '' && val !== '-' && val !== 'ไม่ระบุสถานะ' && val !== 'ไม่ระบุทีม';
+                      });
                   });
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
@@ -1242,7 +1258,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   if (snapshot.empty) return;
                   let allCols = new Set(initialNsCols);
                   let metadataCols = null;
-                  const validTasks = [];
+                  const newTasks = [];
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
@@ -1264,8 +1280,26 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       else { const parsed = parseInt(doc.id.replace('task_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
                       
                       cleanData._rowIndex = rIndex || 0;
-                      const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
-                      if(hasData) validTasks.push(cleanData);
+                      newTasks.push(cleanData);
+                  });
+
+                  // v1.0.20: ตัวกรองแถวผีแบบเรียบง่าย สำหรับฝั่ง Region
+                  const validTasks = newTasks.filter(task => {
+                      return Object.keys(task).some(key => {
+                          if (key === 'id' || key === '_rowIndex') return false;
+                          const lowerKey = key.toLowerCase().replace(/\s+/g, '');
+                          
+                          if (lowerKey.includes('นัดหมาย') || lowerKey.includes('over') || 
+                              lowerKey.includes('เกินกำหนด') || lowerKey.includes('สถานะ') || 
+                              lowerKey.includes('status') || lowerKey.includes('วันที่') || 
+                              lowerKey.includes('เวลา') || lowerKey.includes('date') || 
+                              lowerKey.includes('time')) {
+                              return false;
+                          }
+                          
+                          const val = String(task[key]).trim();
+                          return val !== '' && val !== '-' && val !== 'ไม่ระบุสถานะ' && val !== 'ไม่ระบุทีม';
+                      });
                   });
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
@@ -1422,7 +1456,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               const targetCollection = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
 
               console.log(`✏️ [Edit Triggered] กำลังเตรียมข้อมูลเพื่ออัปเดต - Field: ${field}, Sheet: ${targetSheetName}`);
-              console.log(`✏️ [Edit Triggered] Doc IDs:`, docIds, `Row Indices:`, rowIndices);
 
               if (tasksSubTab === 'subcontract') {
                   setTasks(prev => prev.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
@@ -1451,7 +1484,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           
                           // หากไม่มีค่า Row Index ชัดเจน ให้ดึงมาจากชื่อ Doc ID แทน
                           if (!rNum || rNum === 999999 || rNum === 0 || isNaN(parseInt(rNum))) {
-                             const parsed = parseInt(id.replace('task_', '')); // จะทำให้ task_assign_ กลายเป็น NaN
+                             const parsed = parseInt(id.replace('task_', '')); 
                              if(!isNaN(parsed) && parsed > 1 && parsed <= 50000) {
                                  rNum = parsed;
                              } else {
@@ -1459,7 +1492,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                              }
                           }
 
-                          // 🛡️ Safety Boundary: ตรวจสอบเลขบรรทัดอย่างเข้มงวดที่สุด ต้องอยู่ระหว่าง 2 ถึง 50000 เท่านั้น
                           if (rNum && rNum > 1 && rNum <= 50000) {
                               pendingUpdatesRef.current = pendingUpdatesRef.current.filter(u => !(u.row === rNum && u.field === field && u.sheetName === targetSheetName));
                               pendingUpdatesRef.current.push({ row: rNum, field: field, value: value, sheetName: targetSheetName });
@@ -1469,7 +1501,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           }
                       });
 
-                      // ถ้าระบบตรวจสอบแล้วพบว่าบรรทัดมั่วทั้งหมด (ไม่มีแถวที่ถูกต้องเลย) ให้หยุดการส่งไปหา GAS
                       if (!hasValidUpdate) {
                           alert('ข้อมูลงานนี้กำลังซิงค์อยู่ หรือหาเลขบรรทัดใน Sheet ไม่พบ กรุณารอสักครู่แล้วรีเฟรชหน้าเว็บอีกครั้งครับ');
                           return true;
@@ -1484,7 +1515,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           const updatesToSync = [...pendingUpdatesRef.current];
                           pendingUpdatesRef.current = [];
 
-                          // จัดกลุ่มคำสั่งแยกตามชื่อ Sheet ก่อนส่ง
                           const updatesBySheet = {};
                           updatesToSync.forEach(u => {
                               if(!updatesBySheet[u.sheetName]) updatesBySheet[u.sheetName] = [];
@@ -1496,7 +1526,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                   action: 'updateBatch', 
                                   sheetName: sheet, 
                                   updates: updatesBySheet[sheet],
-                                  // ส่ง 3 ค่านี้แนบไปด้วยเสมอ เผื่อ GAS รันเวอร์ชันเก่า
                                   row: updatesBySheet[sheet][0].row,
                                   field: updatesBySheet[sheet][0].field,
                                   value: updatesBySheet[sheet][0].value
