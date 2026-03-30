@@ -646,7 +646,8 @@
             };
 
             const nsCidOptions = useMemo(() => {
-                const cids = (nsTasks || []).map(t => getVal(t, ['circuitno', 'cid'])).filter(c => c && String(c).trim() !== '');
+                // ล็อคเป้าให้ดึงจากคอลัมน์ CIRCUIT NO. เท่านั้น
+                const cids = (nsTasks || []).map(t => getVal(t, ['circuitno'])).filter(c => c && String(c).trim() !== '');
                 return [...new Set(cids)];
             }, [nsTasks]);
 
@@ -661,8 +662,9 @@
             const executeAutoFill = (searchCidValue, currentSiteType) => {
                 if (!searchCidValue.trim()) return;
                 
+                // ล็อคเป้าตรวจสอบจากคอลัมน์ CIRCUIT NO.
                 const matchedCids = (nsTasks || []).filter(t => {
-                    const cid = getVal(t, ['circuitno', 'cid']);
+                    const cid = getVal(t, ['circuitno']);
                     return String(cid).trim().toLowerCase() === searchCidValue.trim().toLowerCase();
                 });
 
@@ -672,7 +674,8 @@
                 }
 
                 let actualSiteType = currentSiteType || 'Terminate';
-                const siteTypeKeys = ['site', 'sitetype'];
+                // ล็อคเป้าตรวจสอบจากคอลัมน์ SITE_TYPE เท่านั้น
+                const siteTypeKeys = ['sitetype']; 
                 
                 let matchedRows = matchedCids.filter(t => {
                     const st = getVal(t, siteTypeKeys);
@@ -727,7 +730,7 @@
                         }
                     }
 
-                    // 🔥 ปรับแก้การดึงข้อมูลให้ตรงกับคอลัมน์เป๊ะๆ ตามที่คุณระบุมา 100%
+                    // 🔥 ล็อคชื่อคอลัมน์ทั้งหมดตามที่ระบุไว้
                     setForm(prev => ({
                         ...prev,
                         cid: getVal(first, ['circuitno']) || prev.cid, 
@@ -745,6 +748,7 @@
                         details: '' 
                     }));
 
+                    // 🔥 ล็อคเป้าคอลัมน์ ITEM NAME และ SERIALNO
                     const equips = matchedRows.map(t => ({
                         name: getVal(t, ['itemname']) || '',
                         serial: getVal(t, ['serialno']) || ''
