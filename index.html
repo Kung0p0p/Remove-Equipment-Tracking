@@ -83,9 +83,9 @@
 
     <script type="text/babel">
         // ==========================================
-        // APP VERSION: v1.0.17
+        // APP VERSION: v1.0.23 (Super Fast + Nuke Ghost Rows)
         // ==========================================
-        const APP_VERSION = "1.0.17";
+        const APP_VERSION = "1.0.23";
 
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
@@ -93,7 +93,7 @@
 
         const { useState, useEffect, useRef, useMemo, useTransition } = React;
 
-        // Error Boundary เพื่อป้องกันหน้าจอขาว
+        // Error Boundary 
         class ErrorBoundary extends React.Component {
             constructor(props) {
                 super(props);
@@ -110,7 +110,7 @@
                     return (
                         <div className="flex flex-col items-center justify-center w-full h-screen bg-slate-50 p-8 text-center">
                             <i className="fa-solid fa-triangle-exclamation text-6xl text-red-500 mb-4"></i>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-2">เกิดข้อผิดพลาดในการแสดงผล (ระบบขัดข้อง)</h2>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-2">เกิดข้อผิดพลาดในการแสดงผล</h2>
                             <p className="text-slate-500 mb-6 max-w-lg break-words text-sm border p-4 bg-white rounded-lg shadow-inner">
                                 {this.state.error && this.state.error.toString()}
                             </p>
@@ -138,13 +138,14 @@
             appId: "1:902157523949:web:e5f4db82a028867f4da5e4",
             measurementId: "G-DT2FYYWJ26"
         };
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz3wuRsyajszWwKcmZij4lylWX6qqBoKn3jZ_6BfoGC-Iz4Pju_Z3cMz1WKDABZ6Jc5/exec"; 
+        
+        // ⚠️ วาง URL ของคุณตรงนี้
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         db.settings({ experimentalForceLongPolling: true, useFetchStreams: false });
 
-        // เปิดระบบ Cache สำหรับ Offline / Quota Exceeded ของ Firebase
         db.enablePersistence().catch(function(err) {
             console.warn("Firebase Persistence Error:", err.code);
         });
@@ -165,7 +166,6 @@
             teams: ["BA", "TAS", "ATG", "NPY", "JEKLINK", "TP", "JJ&A", "SYMC"]
         };
 
-        // --- Helper Functions ---
         const formatSheetDate = (val) => {
             if (typeof val !== 'string') return val;
             const isLongDate = val.match(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/) || val.match(/^\d{4}-\d{2}-\d{2}T/);
@@ -224,6 +224,32 @@
 
         const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
         const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
+
+        // === ฟังก์ชันคัดกรองแถวผีแบบเข้มงวด (Strict Ghost Row Filter) ที่ถูกดึงกลับมา ===
+        const isValidTaskHelper = (taskObj) => {
+            if (!taskObj) return false;
+            let hasRealData = false;
+            Object.keys(taskObj).forEach(k => {
+                if (k === 'id' || k === '_rowIndex') return;
+                const lk = String(k).toLowerCase().replace(/\s+/g, '');
+                
+                // คอลัมน์เหล่านี้ไม่นับว่าเป็นข้อมูล "จริง" (เพราะอาจเกิดจากสูตร หรือระบบใส่ให้เอง)
+                if (lk.includes('นัดหมาย') || lk.includes('over') || 
+                    lk.includes('เกินกำหนด') || lk.includes('สถานะ') || 
+                    lk.includes('status') || lk.includes('วันที่') || 
+                    lk.includes('เวลา') || lk.includes('date') || 
+                    lk.includes('time') || lk.includes('timestamp')) {
+                    return;
+                }
+                
+                const val = String(taskObj[k]).trim();
+                // ถ้ามีข้อความอื่นๆ นอกเหนือจากค่าว่าง ถือว่าเป็นงานจริง
+                if (val !== '' && val !== '-' && val !== 'ไม่ระบุสถานะ' && val !== 'ไม่ระบุทีม') {
+                    hasRealData = true;
+                }
+            });
+            return hasRealData;
+        };
 
         const fallbackTeamColors = [ { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, { bg: '#ccfbf1', text: '#0f766e', border: '#99f6e4' }, { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe' }, { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' } ];
         const specificTeamColors = { 'ba': { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' }, 'tas': { bg: '#dbeafe', text: '#1e3a8a', border: '#bfdbfe' }, 'atg': { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }, 'npy': { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }, 'jeklink': { bg: '#fce7f3', text: '#9d174d', border: '#fbcfe8' }, 'jj&a': { bg: '#e0f2fe', text: '#075985', border: '#bae6fd' }, 'tp': { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe' }, 'symc': { bg: '#ecfccb', text: '#854d0e', border: '#d9f99d' } };
@@ -792,7 +818,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                 try {
                     const newTaskId = `task_assign_${Date.now()}`;
                     
-                    // ปรับสูตรให้เป็นแบบ Dynamic Row (รองรับการเพิ่มบรรทัดใหม่ทุกบรรทัด)
                     const dynamicFormula = `=LET(day_diff, (INT(INDIRECT("O"&ROW())) + 3) - IF(ISBLANK(INDIRECT("A"&ROW())), TODAY(), INT(INDIRECT("A"&ROW()))), IF(day_diff < 0, "เกินกำหนด " & ABS(day_diff) & " วัน", IF(day_diff = 0, "ครบกำหนด", "เหลือเวลา " & day_diff & " วัน")))`;
                     
                     const newTaskData = {
@@ -1182,6 +1207,13 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
                       else { const parsed = parseInt(doc.id.replace('task_', '').replace('task_assign_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
                       
+                      // 🔥 NEW: Auto-purge stuck ghost tasks with invalid/absurd row numbers
+                      if (rIndex >= 50000 && !doc.id.startsWith('task_assign_')) {
+                          console.warn('🗑️ Auto-purging stuck ghost task:', doc.id);
+                          doc.ref.delete().catch(()=>{});
+                          return;
+                      }
+
                       cleanData._rowIndex = rIndex || 0;
                       if (doc.id.startsWith('task_assign_')) assignTasks.push(cleanData);
                       else newTasks.push(cleanData);
@@ -1199,13 +1231,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       else newTasks.push(assignT);
                   });
 
-                  const validTasks = newTasks.filter(task => {
-                      return Object.keys(task).some(k => 
-                          k !== 'id' && k !== '_rowIndex' && 
-                          !k.includes('วันที่') && !k.includes('เวลา') && !k.includes('date') && !k.includes('time') && 
-                          String(task[k]).trim() !== ''
-                      );
-                  });
+                  const validTasks = newTasks.filter(isValidTaskHelper);
 
                   validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
                   
@@ -1242,7 +1268,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   if (snapshot.empty) return;
                   let allCols = new Set(initialNsCols);
                   let metadataCols = null;
-                  const validTasks = [];
+                  const newTasks = [];
 
                   snapshot.forEach((doc) => {
                       if (doc.id === '_metadata') { metadataCols = doc.data().columns; return; }
@@ -1263,14 +1289,22 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       else if (data['_rowIndex'] !== undefined) rIndex = parseInt(data['_rowIndex']);
                       else { const parsed = parseInt(doc.id.replace('task_', '')); rIndex = isNaN(parsed) ? 999999 : parsed; }
                       
+                      // 🔥 NEW: Auto-purge stuck ghost tasks (NS)
+                      if (rIndex >= 50000) {
+                          console.warn('🗑️ Auto-purging stuck ghost task (NS):', doc.id);
+                          doc.ref.delete().catch(()=>{});
+                          return;
+                      }
+
                       cleanData._rowIndex = rIndex || 0;
-                      const hasData = Object.keys(cleanData).some(k => k !== 'id' && k !== '_rowIndex' && String(cleanData[k]).trim() !== '');
-                      if(hasData) validTasks.push(cleanData);
+                      if(isValidTaskHelper(cleanData)) {
+                          newTasks.push(cleanData);
+                      }
                   });
 
-                  validTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
-                  startTransition(() => { setNsTasks(validTasks); });
-                  localStorage.setItem('equip_tracker_ns_tasks', JSON.stringify(validTasks));
+                  newTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
+                  startTransition(() => { setNsTasks(newTasks); });
+                  localStorage.setItem('equip_tracker_ns_tasks', JSON.stringify(newTasks));
 
                   if (metadataCols && Array.isArray(metadataCols)) { 
                       setNsColumns(metadataCols); localStorage.setItem('equip_tracker_ns_columns', JSON.stringify(metadataCols)); 
@@ -1418,11 +1452,15 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               const oldValue = taskObj[field] || '';
               if(oldValue === value) return true;
 
+              if (docIds.length > 20) {
+                  alert(`⚠️ ระบบระงับการทำงานชั่วคราว!\n\nตรวจพบความพยายามอัปเดตข้อมูลพร้อมกันถึง ${docIds.length} แถว ซึ่งอาจเกิดจากการที่แถวว่างถูกจับกลุ่มรวมกัน\n\nคำแนะนำ: กรุณาลบแถวว่างใน Google Sheet ทิ้งก่อนครับ`);
+                  return false; 
+              }
+
               const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
               const targetCollection = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
 
-              console.log(`✏️ [Edit Triggered] กำลังเตรียมข้อมูลเพื่ออัปเดต - Field: ${field}, Sheet: ${targetSheetName}`);
-              console.log(`✏️ [Edit Triggered] Doc IDs:`, docIds, `Row Indices:`, rowIndices);
+              console.log(`✏️ [Edit Triggered] Field: ${field}, Sheet: ${targetSheetName}, Rows count: ${docIds.length}`);
 
               if (tasksSubTab === 'subcontract') {
                   setTasks(prev => prev.map(t => docIds.includes(t.id) ? { ...t, [field]: value } : t));
@@ -1448,32 +1486,20 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
                       docIds.forEach((id, idx) => {
                           let rNum = rowIndices[idx];
-                          
-                          // หากไม่มีค่า Row Index ชัดเจน ให้ดึงมาจากชื่อ Doc ID แทน
                           if (!rNum || rNum === 999999 || rNum === 0 || isNaN(parseInt(rNum))) {
-                             const parsed = parseInt(id.replace('task_', '')); // จะทำให้ task_assign_ กลายเป็น NaN
-                             if(!isNaN(parsed) && parsed > 1 && parsed <= 50000) {
-                                 rNum = parsed;
-                             } else {
-                                 rNum = null;
-                             }
+                             const parsed = parseInt(id.replace('task_', '')); 
+                             if(!isNaN(parsed) && parsed > 1 && parsed <= 50000) rNum = parsed;
+                             else rNum = null;
                           }
 
-                          // 🛡️ Safety Boundary: ตรวจสอบเลขบรรทัดอย่างเข้มงวดที่สุด ต้องอยู่ระหว่าง 2 ถึง 50000 เท่านั้น
                           if (rNum && rNum > 1 && rNum <= 50000) {
                               pendingUpdatesRef.current = pendingUpdatesRef.current.filter(u => !(u.row === rNum && u.field === field && u.sheetName === targetSheetName));
                               pendingUpdatesRef.current.push({ row: rNum, field: field, value: value, sheetName: targetSheetName });
                               hasValidUpdate = true;
-                          } else {
-                              console.warn(`⚠️ [Blocked] ข้ามการส่งซิงค์ลง Sheet งาน ${id} เนื่องจากเลขบรรทัดผิดปกติ (${rNum})`);
                           }
                       });
 
-                      // ถ้าระบบตรวจสอบแล้วพบว่าบรรทัดมั่วทั้งหมด (ไม่มีแถวที่ถูกต้องเลย) ให้หยุดการส่งไปหา GAS
-                      if (!hasValidUpdate) {
-                          alert('ข้อมูลงานนี้กำลังซิงค์อยู่ หรือหาเลขบรรทัดใน Sheet ไม่พบ กรุณารอสักครู่แล้วรีเฟรชหน้าเว็บอีกครั้งครับ');
-                          return true;
-                      }
+                      if (!hasValidUpdate) return true;
 
                       setIsBackgroundSyncing(true);
                       if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -1484,7 +1510,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           const updatesToSync = [...pendingUpdatesRef.current];
                           pendingUpdatesRef.current = [];
 
-                          // จัดกลุ่มคำสั่งแยกตามชื่อ Sheet ก่อนส่ง
                           const updatesBySheet = {};
                           updatesToSync.forEach(u => {
                               if(!updatesBySheet[u.sheetName]) updatesBySheet[u.sheetName] = [];
@@ -1496,14 +1521,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                   action: 'updateBatch', 
                                   sheetName: sheet, 
                                   updates: updatesBySheet[sheet],
-                                  // ส่ง 3 ค่านี้แนบไปด้วยเสมอ เผื่อ GAS รันเวอร์ชันเก่า
                                   row: updatesBySheet[sheet][0].row,
                                   field: updatesBySheet[sheet][0].field,
                                   value: updatesBySheet[sheet][0].value
                               });
-                              
-                              console.log('📡 [Sync to Sheet] ส่งคำสั่งสำเร็จ Payload:', payloadData);
-                              
                               fetch(GAS_WEB_APP_URL, {
                                   method: 'POST', mode: 'no-cors',
                                   headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -1557,13 +1578,15 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   processedTasks.forEach(t => {
                       const cid = t_cidCol ? t[t_cidCol] : '';
                       const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
+                      const cleanCid = String(cid).trim();
                       
-                      if (!cid || String(cid).trim() === '') {
+                      // 🛡️ ป้องกันการจับกลุ่มแถวผี
+                      if (!cleanCid || cleanCid === '-' || cleanCid.toLowerCase().includes('ไม่ระบุ') || cleanCid.length < 3) {
                           grouped.set(t.id, { ...t, _groupDocs: [t.id], _groupRows: [t._rowIndex] });
                           return;
                       }
                       
-                      const groupKey = `${cid}_${st}`.trim();
+                      const groupKey = `${cleanCid}_${st}`.trim();
                       if (!grouped.has(groupKey)) {
                           grouped.set(groupKey, { 
                               ...t, 
@@ -1713,16 +1736,14 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
           const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
 
-          // สไตล์สำหรับตัวเลขในกราฟแบบ "ไม่มีกรอบพื้นหลัง" แต่ใช้ "ขอบตัวเลข (Text Stroke)" สีเข้มแทน เพื่อให้ตัวเลขลอยมีมิติ
           const dlStyle = { 
               color: '#ffffff', 
               font: { weight: 'bold', size: 12, family: 'Prompt' }, 
               display: (c) => c.dataset.data[c.dataIndex] > 0, 
-              textStrokeColor: 'rgba(15, 23, 42, 0.85)', // สีขอบตัวอักษร (สีกรมท่าเข้ม)
-              textStrokeWidth: 4 // ความหนาของขอบตัวอักษร
+              textStrokeColor: 'rgba(15, 23, 42, 0.85)', 
+              textStrokeWidth: 4 
           };
 
-          // แยกกราฟตรงกลางตามประเภท Dashboard
           let barChartData, barChartOptions, barChartTitle;
           if (dashboardView === 'subcontract') {
               barChartTitle = "สรุปจัดเก็บรายเดือน";
@@ -1787,7 +1808,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           // ================== CALENDAR CALCULATIONS ==================
           const getTasksForDateObj = (dateObj) => {
               if (!dateObj) return [];
-              // ฟิกซ์ให้ดึงเฉพาะคอลัมน์และข้อมูลของ Subcontract (tasks/columns) เท่านั้น
               const calStatusCol = (columns || []).find(c => { const lc = c?.toLowerCase().replace(/\s+/g, '') || ''; return (lc === 'status' || lc === 'สถานะ') && !lc.includes('change'); }) || columns?.[(columns?.length || 1) - 1] || '';
               const calTeamCol = (columns || []).find(c => ['ทีม', 'subcontract', 'รับผิดชอบ', 'nsresponsible', 'responsible'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns?.length > 1 ? columns[1] : '');
               const calCompCol = (columns || []).find(c => ['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'].some(kw => c?.toLowerCase().replace(/\s+/g,'').includes(kw))) || (columns?.length > 2 ? columns[2] : '');
