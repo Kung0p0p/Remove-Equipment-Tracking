@@ -672,7 +672,7 @@
                 }
 
                 let actualSiteType = currentSiteType || 'Terminate';
-                const siteTypeKeys = ['sitetype', 'site', 'originate', 'terminate'];
+                const siteTypeKeys = ['site', 'sitetype'];
                 
                 let matchedRows = matchedCids.filter(t => {
                     const st = getVal(t, siteTypeKeys);
@@ -727,17 +727,17 @@
                         }
                     }
 
-                    // 🔥 เพิ่ม Keywords ให้ครอบคลุมการค้นหาหัวคอลัมน์มากขึ้น
+                    // 🔥 ปรับแก้การดึงข้อมูลให้ตรงกับคอลัมน์เป๊ะๆ ตามที่คุณระบุมา 100%
                     setForm(prev => ({
                         ...prev,
-                        cid: getVal(first, ['circuitno', 'cid']) || prev.cid, 
+                        cid: getVal(first, ['circuitno']) || prev.cid, 
                         siteType: actualSiteType,
-                        customerName: getVal(first, ['customername', 'customer', 'บริษัท', 'ลูกค้า', 'company', 'องค์กร']) || '',
-                        address: getVal(first, ['address', 'ที่อยู่', 'สถานที่']) || '',
-                        phone: getVal(first, ['customercontract', 'contract', 'เบอร์', 'phone', 'ติดต่อ', 'tel']) || '',
-                        cancelDate: getVal(first, ['duejob', 'due', 'ยกเลิก', 'cancel']) || '',
-                        getbackDate: getVal(first, ['getbackdate', 'วันที่เข้าเก็บ', 'date']) || '',
-                        getbackTime: getVal(first, ['getbacktime', 'เวลาเข้าเก็บ', 'เวลา', 'time']) || '',
+                        customerName: getVal(first, ['customername']) || '',
+                        address: getVal(first, ['address']) || '',
+                        phone: getVal(first, ['customercontract']) || '',
+                        cancelDate: getVal(first, ['duejob']) || '',
+                        getbackDate: getVal(first, ['getbackdate']) || '',
+                        getbackTime: getVal(first, ['getbacktime']) || '',
                         districtSearch: displayDistrict || prev.districtSearch,
                         zoneId: matchedZoneId || prev.zoneId,
                         team: matchedTeam || prev.team,
@@ -746,8 +746,8 @@
                     }));
 
                     const equips = matchedRows.map(t => ({
-                        name: getVal(t, ['itemname', 'อุปกรณ์', 'item']) || '',
-                        serial: getVal(t, ['serialno', 'serial', 'sn']) || ''
+                        name: getVal(t, ['itemname']) || '',
+                        serial: getVal(t, ['serialno']) || ''
                     })).filter(e => e.name || e.serial);
 
                     equips.sort((a, b) => {
