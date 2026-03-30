@@ -83,9 +83,9 @@
 
     <script type="text/babel">
         // ==========================================
-        // APP VERSION: v1.0.23 (Super Fast + Nuke Ghost Rows)
+        // APP VERSION: v1.0.26 (Add Delete Confirmation Modal)
         // ==========================================
-        const APP_VERSION = "1.0.23";
+        const APP_VERSION = "1.0.26";
 
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
@@ -139,7 +139,6 @@
             measurementId: "G-DT2FYYWJ26"
         };
         
-        // ⚠️ วาง URL ของคุณตรงนี้
         const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxxTTwaRZfLgamI6d7tgcTv6dQe44WI5U_oHm1OjW-2eqhF5qSSdjLm_Q8sTlEAF6OM/exec"; 
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -225,8 +224,8 @@
         const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
         const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
 
-        // === ฟังก์ชันคัดกรองแถวผีแบบเข้มงวด (Strict Ghost Row Filter) ที่ถูกดึงกลับมา ===
-        const isValidTaskHelper = (taskObj) => {
+        // === ฟังก์ชันคัดกรองแถวผีแบบเข้มงวด (Strict Ghost Row Filter) ===
+        function isValidTaskHelper(taskObj) {
             if (!taskObj) return false;
             let hasRealData = false;
             Object.keys(taskObj).forEach(k => {
@@ -249,7 +248,7 @@
                 }
             });
             return hasRealData;
-        };
+        }
 
         const fallbackTeamColors = [ { bg: '#f3e8ff', text: '#7e22ce', border: '#e9d5ff' }, { bg: '#ccfbf1', text: '#0f766e', border: '#99f6e4' }, { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa' }, { bg: '#e0e7ff', text: '#4338ca', border: '#c7d2fe' }, { bg: '#dcfce7', text: '#15803d', border: '#bbf7d0' }, { bg: '#ffe4e6', text: '#be123c', border: '#fecdd3' } ];
         const specificTeamColors = { 'ba': { bg: '#fee2e2', text: '#991b1b', border: '#fecaca' }, 'tas': { bg: '#dbeafe', text: '#1e3a8a', border: '#bfdbfe' }, 'atg': { bg: '#fef3c7', text: '#92400e', border: '#fde68a' }, 'npy': { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' }, 'jeklink': { bg: '#fce7f3', text: '#9d174d', border: '#fbcfe8' }, 'jj&a': { bg: '#e0f2fe', text: '#075985', border: '#bae6fd' }, 'tp': { bg: '#fae8ff', text: '#86198f', border: '#f5d0fe' }, 'symc': { bg: '#ecfccb', text: '#854d0e', border: '#d9f99d' } };
@@ -1072,6 +1071,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const [tableFilterStatus, setTableFilterStatus] = useState([]);
           const [tableFilterOverdue, setTableFilterOverdue] = useState([]);
           const [searchTerm, setSearchTerm] = useState('');
+          const [showDuplicatesOnly, setShowDuplicatesOnly] = useState(false); // 🔥 เพิ่ม State ควบคุมการแสดงข้อมูลซ้ำ
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
           const [colWidths, setColWidths] = useState({}); 
@@ -1080,6 +1080,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
           const [historyLogs, setHistoryLogs] = useState([]);
           const [showHistoryModal, setShowHistoryModal] = useState(false);
+          const [taskToDelete, setTaskToDelete] = useState(null); // 🔥 เพิ่ม State สำหรับเก็บงานที่กำลังจะกดลบ
           const [masterData, setMasterData] = useState(defaultMasterData);
           const [queueState, setQueueState] = useState({});
           
@@ -1339,6 +1340,30 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           }, [showHistoryModal]);
 
           // ================== CORE HELPERS ==================
+
+          // 🔥 ฟังก์ชันใหม่: แสดง Modal ก่อนลบจริง
+          const executeDeleteTask = () => {
+              if (!taskToDelete) return;
+              const docIds = taskToDelete._groupDocs || [taskToDelete.id];
+              const targetCollection = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
+              
+              setIsBackgroundSyncing(true);
+              const batch = db.batch();
+              docIds.forEach(id => {
+                  batch.delete(targetCollection.doc(id));
+              });
+              batch.commit().then(() => {
+                  alert('✅ ลบงานออกจาก Firebase เรียบร้อยแล้ว!');
+                  setIsBackgroundSyncing(false);
+                  setTaskToDelete(null); // ปิด Modal
+              }).catch(err => {
+                  console.error("Error deleting tasks:", err);
+                  alert('❌ เกิดข้อผิดพลาดในการลบงาน');
+                  setIsBackgroundSyncing(false);
+                  setTaskToDelete(null);
+              });
+          };
+
           const navigateCalendar = (dir) => { 
               const nd = new Date(currentDate); 
               if (calendarView === 'month') nd.setMonth(nd.getMonth() + dir); 
@@ -1412,6 +1437,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               setFilterMonth('All'); setFilterTeams([]); setSearchTerm(''); setTableFilterTeams([]);
               setTableFilterDate([]); setTableFilterYear([]); setTableFilterStatus([]);
               setTableFilterOverdue([]); setSortConfig({ key: null, direction: null });
+              setShowDuplicatesOnly(false); // 🔥 รีเซ็ตตัวกรองข้อมูลซ้ำด้วย
               setCurrentPage(1);
           };
 
@@ -1573,6 +1599,21 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               
               let processedTasks = tableTasks;
 
+              // 🔥 ระบบกรองเพื่อแสดงเฉพาะข้อมูลที่มี CID ซ้ำกัน
+              if (showDuplicatesOnly && t_cidCol) {
+                  const cidCounts = {};
+                  processedTasks.forEach(t => {
+                      const cid = String(t[t_cidCol] || '').trim();
+                      if (cid && cid !== '-' && !cid.toLowerCase().includes('ไม่ระบุ') && cid.length > 2) {
+                          cidCounts[cid] = (cidCounts[cid] || 0) + 1;
+                      }
+                  });
+                  processedTasks = processedTasks.filter(t => {
+                      const cid = String(t[t_cidCol] || '').trim();
+                      return cidCounts[cid] > 1;
+                  });
+              }
+
               if (tasksSubTab === 'ns') {
                   const grouped = new Map();
                   processedTasks.forEach(t => {
@@ -1580,7 +1621,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
                       const cleanCid = String(cid).trim();
                       
-                      // 🛡️ ป้องกันการจับกลุ่มแถวผี
                       if (!cleanCid || cleanCid === '-' || cleanCid.toLowerCase().includes('ไม่ระบุ') || cleanCid.length < 3) {
                           grouped.set(t.id, { ...t, _groupDocs: [t.id], _groupRows: [t._rowIndex] });
                           return;
@@ -1616,7 +1656,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   });
               }
               return processedTasks;
-          }, [currentTasksTable, currentColumnsTable, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, sortConfig, searchTerm]);
+          }, [currentTasksTable, currentColumnsTable, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, sortConfig, searchTerm, showDuplicatesOnly]);
 
           const totalPages = rowsPerPage === 'All' ? 1 : Math.ceil((finalTableTasks?.length || 0) / rowsPerPage);
           const paginatedTasks = rowsPerPage === 'All' ? (finalTableTasks || []) : (finalTableTasks || []).slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
@@ -2010,7 +2050,13 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                             {t_equipYearCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueYears} selected={tableFilterYear} onChange={setTableFilterYear} placeholder="ปี" /></div>}
                             {t_statusCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={tableUniqueStatuses} selected={tableFilterStatus} onChange={setTableFilterStatus} placeholder="Status" /></div>}
                             {t_overDueCol && <div className="w-[calc(50%-4px)] sm:w-auto"><MultiSelect options={['ครบกำหนด', 'ยังไม่ครบกำหนด', 'เกินกำหนด']} selected={tableFilterOverdue} onChange={setTableFilterOverdue} placeholder="นัดหมายลูกค้า" /></div>}
-                            <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto"><ColumnToggle columns={currentColumnsTable} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} /><button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button></div>
+                            <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto">
+                                <button onClick={() => setShowDuplicatesOnly(!showDuplicatesOnly)} className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold px-3 py-1.5 rounded-lg border h-[38px] transition-colors ${showDuplicatesOnly ? 'bg-amber-500 text-white border-amber-600 shadow-inner' : 'text-amber-600 bg-amber-50 hover:bg-amber-500 hover:text-white border-amber-200'}`} title="กรองเพื่อแสดงเฉพาะงานที่มี CID ซ้ำกัน">
+                                    <i className="fa-solid fa-clone"></i> {showDuplicatesOnly ? 'แสดงทั้งหมด' : 'ดูข้อมูลซ้ำ'}
+                                </button>
+                                <ColumnToggle columns={currentColumnsTable} hiddenColumns={hiddenColumns} setHiddenColumns={setHiddenColumns} />
+                                <button onClick={resetFilters} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg border h-[38px]">ล้างตัวกรอง</button>
+                            </div>
                         </div>
                     </div>
 
@@ -2056,8 +2102,9 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                   );
                               }) : <th className="p-4 text-white sticky top-0 bg-slate-800 z-30">ตารางงาน</th>}
                               
-                              {/* คอลัมน์พิเศษสำหรับปุ่มจ่ายงาน (แสดงเฉพาะฝั่ง NS) */}
+                              {/* คอลัมน์พิเศษ: จัดการงาน (ลบ/จ่ายงาน) แยกตาม Tab */}
                               {tasksSubTab === 'ns' && <th className="bg-slate-800 border-l border-slate-700 p-0 align-middle sticky right-0 z-40 w-28 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.2)]"><div className="px-2 py-2 text-center text-xs md:text-sm font-semibold text-white whitespace-nowrap"><i className="fa-solid fa-bolt text-amber-400"></i> จ่ายงาน</div></th>}
+                              {tasksSubTab === 'subcontract' && <th className="bg-slate-800 border-l border-slate-700 p-0 align-middle sticky right-0 z-40 w-20 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.2)]"><div className="px-2 py-2 text-center text-xs md:text-sm font-semibold text-white whitespace-nowrap"><i className="fa-solid fa-trash-can text-red-400"></i> ลบ</div></th>}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-200">
@@ -2211,16 +2258,21 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     }
                                 })}
                                 
-                                {/* ปุ่มจ่ายงานด่วน (โชว์เฉพาะแท็บ NS) */}
-                                {tasksSubTab === 'ns' && (() => {
-                                    return (
-                                        <td className="p-1 align-middle border-l border-slate-200 bg-slate-50 sticky right-0 z-10 text-center shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
-                                            <button onClick={() => handleDirectAssign(task[t_cidCol], task[siteTypeColMatch])} className="w-full h-full min-h-[32px] px-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 rounded-md text-[11px] md:text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1 group whitespace-nowrap" title="คลิกเพื่อส่ง CID นี้ไปหน้าจ่ายงาน (Assign Job)">
-                                                <span>🚀 จ่ายงาน</span> <i className="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
-                                            </button>
-                                        </td>
-                                    );
-                                })()}
+                                {/* 🔥 ปุ่มจัดการ: จ่ายงาน (สำหรับ Region) หรือ ลบงาน (สำหรับ Subcontract) */}
+                                {tasksSubTab === 'ns' && (
+                                    <td className="p-1 align-middle border-l border-slate-200 bg-slate-50 sticky right-0 z-10 text-center shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
+                                        <button onClick={() => handleDirectAssign(task[t_cidCol], task[siteTypeColMatch])} className="w-full h-full min-h-[32px] px-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 rounded-md text-[11px] md:text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1 group whitespace-nowrap" title="คลิกเพื่อส่ง CID นี้ไปหน้าจ่ายงาน (Assign Job)">
+                                            <span>🚀 จ่ายงาน</span> <i className="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                                        </button>
+                                    </td>
+                                )}
+                                {tasksSubTab === 'subcontract' && (
+                                    <td className="p-1 align-middle border-l border-slate-200 bg-slate-50 sticky right-0 z-10 text-center shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.05)]">
+                                        <button onClick={(e) => { e.stopPropagation(); setTaskToDelete(task); }} className="w-full h-full min-h-[32px] px-2 bg-red-50 border border-red-200 text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600 rounded-md text-[11px] md:text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1 group whitespace-nowrap" title="ลบงานนี้ออกจากฐานข้อมูลเว็บ (Manual Delete)">
+                                            <i className="fa-solid fa-trash-can"></i> <span>ลบ</span>
+                                        </button>
+                                    </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
@@ -2584,6 +2636,55 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                       })}
                                   </div>
                               )}
+                          </div>
+                      </div>
+                  </div>
+              )}
+
+              {/* 🔥 Delete Confirmation Modal */}
+              {taskToDelete && (
+                  <div className="fixed inset-0 z-[1050] flex items-center justify-center bg-slate-900/70 p-4 animate-in fade-in">
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden transform transition-all scale-100">
+                          <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-red-50 shrink-0">
+                              <h2 className="text-lg font-bold text-red-700 flex items-center">
+                                  <i className="fa-solid fa-triangle-exclamation mr-2 text-xl"></i> ยืนยันการลบข้อมูล
+                              </h2>
+                              <button onClick={() => setTaskToDelete(null)} className="w-8 h-8 flex justify-center items-center rounded-full bg-white hover:bg-slate-200 text-slate-500 shadow-sm border transition-colors"><i className="fa-solid fa-xmark"></i></button>
+                          </div>
+                          <div className="p-6 bg-white text-center space-y-4">
+                              <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-2 shadow-inner">
+                                  <i className="fa-solid fa-trash-can text-4xl"></i>
+                              </div>
+                              <p className="text-slate-800 text-lg font-bold">คุณแน่ใจหรือไม่ว่าต้องการลบงานนี้?</p>
+                              
+                              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-sm text-slate-700 text-left shadow-sm space-y-2">
+                                  <div className="flex gap-2">
+                                      <span className="font-bold text-slate-500 shrink-0 w-24">บริษัทลูกค้า:</span> 
+                                      <span className="font-semibold break-words">
+                                          {taskToDelete[t_getCol(['บริษัท', 'ลูกค้า', 'site', 'องค์กร', 'ชื่อ', 'company'])] || 'ไม่ระบุ'}
+                                      </span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <span className="font-bold text-slate-500 shrink-0 w-24">CID:</span> 
+                                      <span className="font-semibold text-blue-600 break-words">{taskToDelete[t_cidCol] || 'ไม่ระบุ'}</span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                      <span className="font-bold text-slate-500 shrink-0 w-24">จำนวนข้อมูล:</span> 
+                                      <span className="font-semibold">{taskToDelete._groupDocs ? taskToDelete._groupDocs.length : 1} รายการ</span>
+                                  </div>
+                              </div>
+                              
+                              <p className="text-xs text-red-500 font-bold bg-red-50 p-2 rounded border border-red-100">
+                                  *หมายเหตุ: คำสั่งนี้จะลบข้อมูลออกจากหน้าเว็บเท่านั้น หากใน Google Sheet ยังมีงานนี้อยู่ ข้อมูลจะถูกซิงค์กลับมาอีกครั้งเมื่อมีการแก้ชีท
+                              </p>
+                          </div>
+                          <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
+                              <button onClick={() => setTaskToDelete(null)} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg font-bold text-sm transition-colors shadow-sm">
+                                  ยกเลิก
+                              </button>
+                              <button onClick={executeDeleteTask} className="px-5 py-2.5 bg-red-600 border border-red-700 text-white hover:bg-red-700 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center gap-2 active:scale-95">
+                                  <i className="fa-solid fa-trash-can"></i> ใช่, ยืนยันการลบ
+                              </button>
                           </div>
                       </div>
                   </div>
