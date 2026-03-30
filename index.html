@@ -83,9 +83,9 @@
 
     <script type="text/babel">
         // ==========================================
-        // APP VERSION: v1.0.26 (Add Delete Confirmation Modal)
+        // APP VERSION: v1.0.27 (Delete Rows in Google Sheet)
         // ==========================================
-        const APP_VERSION = "1.0.26";
+        const APP_VERSION = "1.0.27";
 
         if (typeof ChartDataLabels !== 'undefined') {
             Chart.register(ChartDataLabels);
@@ -1341,24 +1341,51 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
           // ================== CORE HELPERS ==================
 
-          // 🔥 ฟังก์ชันใหม่: แสดง Modal ก่อนลบจริง
-          const executeDeleteTask = () => {
+          // 🔥 ฟังก์ชันใหม่: แสดง Modal ก่อนลบจริง (อัปเดตให้ลบใน Sheet ด้วย)
+          const executeDeleteTask = async () => {
               if (!taskToDelete) return;
               const docIds = taskToDelete._groupDocs || [taskToDelete.id];
+              const rowIndices = taskToDelete._groupRows || [taskToDelete._rowIndex];
               const targetCollection = tasksSubTab === 'subcontract' ? collectionRef : nsCollectionRef;
+              const targetSheetName = tasksSubTab === 'subcontract' ? 'Subcontract_2026' : 'Jobs for NS 2018-2025';
               
               setIsBackgroundSyncing(true);
+
+              // 1. สั่งลบบรรทัดใน Google Sheet ก่อน
+              if (GAS_WEB_APP_URL) {
+                  // กรองเฉพาะเลขบรรทัดที่ถูกต้อง (ป้องกันการลบ header หรือแถวมั่ว)
+                  const validRows = rowIndices.map(r => parseInt(r)).filter(r => !isNaN(r) && r > 1 && r < 50000);
+                  if (validRows.length > 0) {
+                      const payloadData = JSON.stringify({
+                          action: 'deleteRows',
+                          sheetName: targetSheetName,
+                          rows: validRows
+                      });
+                      try {
+                          await fetch(GAS_WEB_APP_URL, {
+                              method: 'POST', mode: 'no-cors',
+                              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                              body: payloadData
+                          });
+                          console.log('📡 [Sync to Sheet] Sent deleteRows command:', validRows);
+                      } catch (e) {
+                          console.error('Error deleting from sheet:', e);
+                      }
+                  }
+              }
+
+              // 2. ลบออกจาก Firebase
               const batch = db.batch();
               docIds.forEach(id => {
                   batch.delete(targetCollection.doc(id));
               });
               batch.commit().then(() => {
-                  alert('✅ ลบงานออกจาก Firebase เรียบร้อยแล้ว!');
+                  alert('✅ ลบงานออกจาก Firebase และ Google Sheet เรียบร้อยแล้ว!');
                   setIsBackgroundSyncing(false);
                   setTaskToDelete(null); // ปิด Modal
               }).catch(err => {
                   console.error("Error deleting tasks:", err);
-                  alert('❌ เกิดข้อผิดพลาดในการลบงาน');
+                  alert('❌ เกิดข้อผิดพลาดในการลบงานบน Firebase');
                   setIsBackgroundSyncing(false);
                   setTaskToDelete(null);
               });
@@ -2675,7 +2702,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                               </div>
                               
                               <p className="text-xs text-red-500 font-bold bg-red-50 p-2 rounded border border-red-100">
-                                  *หมายเหตุ: คำสั่งนี้จะลบข้อมูลออกจากหน้าเว็บเท่านั้น หากใน Google Sheet ยังมีงานนี้อยู่ ข้อมูลจะถูกซิงค์กลับมาอีกครั้งเมื่อมีการแก้ชีท
+                                  *หมายเหตุ: คำสั่งนี้จะลบข้อมูลออกจากหน้าเว็บ และทำการลบบรรทัดใน Google Sheet อย่างถาวร (ไม่สามารถกู้คืนได้)
                               </p>
                           </div>
                           <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
