@@ -767,13 +767,9 @@
                     }
                     
                     if (isAutoSwitched && !autoAssignData) {
-                    customAlert(`✅ ดึงข้อมูลสำเร็จ! (สลับเป็น "${finalSiteType}" ให้อัตโนมัติ)`, 'success');
-                } else if (!autoAssignData && !isManualSwitch) {
-                    if (equips.length > 0) {
-                        customAlert(`✅ ดึงข้อมูลสำเร็จ! พบอุปกรณ์ ${equips.length} รายการ`, 'success');
-                    } else {
-                        customAlert(`✅ ดึงข้อมูลสำเร็จ! แต่ไม่พบรายการอุปกรณ์ในระบบ`, 'warning');
-                    }
+                        alert(`✅ ดึงข้อมูล CID: ${searchCidValue} สำเร็จ!\n(ระบบสลับ Site Type เป็น "${actualSiteType}" ให้อัตโนมัติ)\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
+                    } else if (!autoAssignData) {
+                        alert(`✅ ดึงข้อมูล CID: ${searchCidValue} สำเร็จ!\nพบอุปกรณ์ทั้งหมด ${equips.length} รายการ`);
                     }
                 }
             };
