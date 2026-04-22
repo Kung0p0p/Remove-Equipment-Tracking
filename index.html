@@ -2042,66 +2042,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               barChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { ...dlStyle, font: { weight: 'bold', size: 13, family: 'Prompt' } } }, scales: { y: { beginAtZero: true }, x: { stacked: false } } };
           }
 
-          // --- ปรับปรุง Logic กราฟแยกทีม (v2.1.0) ---
-          const completedKeywords = ["เก็บอุปกรณ์เรียบร้อย รอนำคืน SYM", "คืนอุปกรณ์ SYM เรียบร้อย", "เก็บเรียบร้อย", "Completed"];
-          const isTaskCompleted = (status) => completedKeywords.some(k => String(status).includes(k));
-
-          const allActiveTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[d_teamCol])))].sort();
-          
-          // แยกทีมปกติ และ ทีมที่ไม่ระบุ
-          const mainTeams = allActiveTeams.filter(t => t !== 'ไม่ระบุทีม');
-          const unassignedLabel = 'ไม่ระบุทีม';
-
-          // ข้อมูลสำหรับกราฟทีมหลัก
-          const teamChartData = { 
-              labels: mainTeams, 
-              datasets: [
-                  { 
-                      label: 'Completed', 
-                      data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && isTaskCompleted(getCleanStatus(t[d_statusCol]))).length),
-                      backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                      borderRadius: 4
-                  },
-                  { 
-                      label: 'On Process', 
-                      data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && !isTaskCompleted(getCleanStatus(t[d_statusCol]))).length),
-                      backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                      borderRadius: 4
-                  }
-              ] 
-          };
-
-          // ข้อมูลสำหรับกราฟ "ไม่ระบุทีม"
-          const unassignedChartData = {
-              labels: [unassignedLabel],
-              datasets: [
-                  { 
-                      label: 'Completed', 
-                      data: [chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === unassignedLabel && isTaskCompleted(getCleanStatus(t[d_statusCol]))).length],
-                      backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                      borderRadius: 4
-                  },
-                  { 
-                      label: 'On Process', 
-                      data: [chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === unassignedLabel && !isTaskCompleted(getCleanStatus(t[d_statusCol]))).length],
-                      backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                      borderRadius: 4
-                  }
-              ]
-          };
-
-          const teamChartOptions = { 
-              responsive: true, 
-              maintainAspectRatio: false, 
-              plugins: { 
-                  legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }, 
-                  datalabels: { ...dlStyle, anchor: 'end', align: 'top', offset: -2 } 
-              }, 
-              scales: { 
-                  x: { stacked: false }, 
-                  y: { beginAtZero: true, grid: { display: false } } 
-              } 
-          };
+          const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[d_statusCol])))];
+          const activeTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[d_teamCol])))].sort();
+          const teamChartData = { labels: activeTeams, datasets: activeStatusesForTeam.map(status => ({ label: status, data: activeTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && getCleanStatus(t[d_statusCol]) === status).length), backgroundColor: getStatusColor(status, 0.8), borderColor: getStatusColor(status, 1), borderWidth: 1 })) };
+          const teamChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, datalabels: dlStyle }, scales: { x: { stacked: false }, y: { beginAtZero: true } } };
 
           const overdueByTeamCounts = {}; activeTeams.forEach(t => overdueByTeamCounts[t] = 0);
           chartFilteredTasks.forEach(t => {
@@ -2324,33 +2268,9 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                               <h3 className="text-base md:text-lg font-bold mb-4 flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> {barChartTitle}</h3>
                               <div className="relative h-60 md:h-72 w-full"><ChartComponent type="bar" data={barChartData} options={barChartOptions} /></div>
                           </div>
-                          {/* ปรับปรุงการแสดงผลกราฟแยกทีม v2.1.0 */}
-                          <div className={`lg:col-span-3 grid grid-cols-1 lg:grid-cols-4 gap-6`}>
-                              {/* กราฟทีมหลัก (3 ส่วน) */}
-                              <div className="lg:col-span-3 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200">
-                                  <div className="flex justify-between items-center mb-4">
-                                      <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
-                                          <i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานแยกตามทีม (Completed vs On Process)
-                                      </h3>
-                                  </div>
-                                  <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
-                                      <div className="min-w-[500px] h-full">
-                                          {chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
-                                      </div>
-                                  </div>
-                              </div>
-
-                              {/* กราฟไม่ระบุทีม (1 ส่วน) */}
-                              <div className="lg:col-span-1 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200">
-                                  <div className="flex justify-between items-center mb-4">
-                                      <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-amber-600">
-                                          <i className="fa-solid fa-question-circle"></i> งานค้าง (ไม่ระบุทีม)
-                                      </h3>
-                                  </div>
-                                  <div className="relative h-64 md:h-80 w-full">
-                                      {chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={unassignedChartData} options={teamChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
-                                  </div>
-                              </div>
+                          <div className={`bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 ${dashboardView === 'ns' ? 'lg:col-span-3' : 'lg:col-span-2'}`}>
+                              <div className="flex justify-between items-center mb-4"><h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม</h3></div>
+                              <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2"><div className="min-w-[500px] md:min-w-[600px] h-full">{chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}</div></div>
                           </div>
                           
                           {/* กราฟเกินกำหนดนัดหมาย (แสดงเฉพาะหน้า Subcontract) */}
