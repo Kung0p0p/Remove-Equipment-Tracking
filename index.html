@@ -1887,20 +1887,40 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               if (tasksSubTab === 'subcontract') {
                   const nsTeamCol = getTeamColumnName(nsColumns);
                   const nsCidCol = nsColumns.find(c => ['cid', 'circuitno'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                  const nsSiteCol = nsColumns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
                   
                   const nsCidMap = {};
                   if (nsCidCol && nsTeamCol) {
                       nsTasks.forEach(nt => {
                           if (!nt) return;
-                          const cid = nt[nsCidCol] ? String(nt[nsCidCol]).trim() : '';
-                          if (cid) nsCidMap[cid] = nt[nsTeamCol];
+                          const cid = nt[nsCidCol] ? String(nt[nsCidCol]).trim().toLowerCase() : '';
+                          const site = nsSiteCol && nt[nsSiteCol] ? String(nt[nsSiteCol]).trim().toLowerCase() : '';
+                          if (cid) {
+                              // 🔥 เก็บแบบมี Site Type เป็นกุญแจหลัก (เช่น 12345_terminate)
+                              if (site) nsCidMap[`${cid}_${site}`] = nt[nsTeamCol];
+                              // 🔥 เก็บแบบไม่มี Site Type สำรองไว้ด้วย (เผื่อฝั่ง Subcon ลืมใส่ Site)
+                              if (!nsCidMap[cid]) nsCidMap[cid] = nt[nsTeamCol]; 
+                          }
                       });
                   }
 
+                  const subSiteCol = currentColumnsTable.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+
                   // ใส่ข้อมูล Region_Respon ลงในทุกแถวเพื่อให้ระบบรู้จักคอลัมน์นี้ก่อนกรอง
                   processedTasks = processedTasks.map(t => {
-                      const cid = t_cidCol ? String(t[t_cidCol] || '').trim() : '';
-                      return { ...t, 'Region_Respon': nsCidMap[cid] || '-' };
+                      const cid = t_cidCol ? String(t[t_cidCol] || '').trim().toLowerCase() : '';
+                      const site = subSiteCol && t[subSiteCol] ? String(t[subSiteCol]).trim().toLowerCase() : '';
+                      
+                      let regionRespon = '-';
+                      if (cid) {
+                          // 🔥 ค้นหาแบบเจาะจง Site Type ก่อน ถ้าไม่เจอค่อยหาแบบ CID เพียวๆ
+                          if (site && nsCidMap[`${cid}_${site}`]) {
+                              regionRespon = nsCidMap[`${cid}_${site}`];
+                          } else if (nsCidMap[cid]) {
+                              regionRespon = nsCidMap[cid];
+                          }
+                      }
+                      return { ...t, 'Region_Respon': regionRespon };
                   });
 
                   // 🟢 2. กรองตาม Region Responsible (ถ้ามีการเลือก)
@@ -2837,21 +2857,33 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                         options={(() => {
                                             const nsTeamCol = getTeamColumnName(nsColumns);
                                             const nsCidCol = nsColumns.find(c => ['cid', 'circuitno'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                                            const nsSiteCol = nsColumns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
                                             if (!nsTeamCol || !nsCidCol) return ['-'];
 
                                             const nsCidMap = {};
                                             nsTasks.forEach(nt => {
-                                                const cid = String(nt[nsCidCol] || '').trim();
-                                                if (cid) nsCidMap[cid] = nt[nsTeamCol];
+                                                const cid = String(nt[nsCidCol] || '').trim().toLowerCase();
+                                                const site = nsSiteCol && nt[nsSiteCol] ? String(nt[nsSiteCol]).trim().toLowerCase() : '';
+                                                if (cid) {
+                                                    if (site) nsCidMap[`${cid}_${site}`] = nt[nsTeamCol];
+                                                    if (!nsCidMap[cid]) nsCidMap[cid] = nt[nsTeamCol];
+                                                }
                                             });
 
                                             const subCidKey = t_getCol(['cid', 'circuitno']);
+                                            const subSiteCol = columns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                                            
                                             const regionsInSub = tasks.map(t => {
-                                                const cid = String(t[subCidKey] || '').trim();
-                                                return nsCidMap[cid] || '-';
+                                                const cid = String(t[subCidKey] || '').trim().toLowerCase();
+                                                const site = subSiteCol && t[subSiteCol] ? String(t[subSiteCol]).trim().toLowerCase() : '';
+                                                if (cid) {
+                                                    if (site && nsCidMap[`${cid}_${site}`]) return nsCidMap[`${cid}_${site}`];
+                                                    if (nsCidMap[cid]) return nsCidMap[cid];
+                                                }
+                                                return '-';
                                             });
                                             return [...new Set(regionsInSub)].sort();
-                                        })()} 
+                                        })()}
                                         selected={tableFilterRegionRespon} 
                                         onChange={setTableFilterRegionRespon} 
                                         placeholder="Region Respon" 
