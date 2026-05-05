@@ -132,7 +132,7 @@
             }
         }
 
-         // ==========================================
+        // ==========================================
         // 1. Global Setup & Firebase Config
         // ==========================================
         const firebaseConfig = {
@@ -145,7 +145,7 @@
             measurementId: "G-DT2FYYWJ26"
         };
         
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzbFJLODMmAOXPNf-5W-m7Y2fq_WnQNLy90EWA76cjaKUDR676KTjZ73iV1-2rxxJUD/exec"; 
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzbFJLODMmAOXPNf-5W-m7Y2fq_WnQNLy90EWA76cjaKUDR676KTjZ73iV1-2rxxJUD/exec";  
 
         if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
@@ -227,6 +227,16 @@
         const getCleanStatus = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุสถานะ';
         const getCleanTeam = (raw) => (raw !== undefined && raw !== null && String(raw).trim() !== '') ? String(raw).trim() : 'ไม่ระบุทีม';
 
+        // ฟังก์ชันย่อชื่อ: "Firstname Lastname" -> "Firstname.L"
+        const shortenName = (name) => {
+            if (!name || typeof name !== 'string') return name;
+            const parts = name.trim().split(/\s+/);
+            if (parts.length > 1) {
+                return `${parts[0]}.${parts[1].charAt(0).toUpperCase()}`;
+            }
+            return name;
+        };
+
         function isValidTaskHelper(taskObj) {
             if (!taskObj) return false;
             
@@ -301,15 +311,22 @@
         // ==========================================
         // 2. Reusable UI Components
         // ==========================================
-        const MultiSelect = ({ options = [], selected = [], onChange, placeholder = "ทั้งหมด" }) => {
+        const MultiSelect = ({ options = [], selected = [], onChange, placeholder = "ทั้งหมด", searchable = false }) => {
             const [isOpen, setIsOpen] = useState(false);
+            const [searchTerm, setSearchTerm] = useState(""); // 🔥 State สำหรับค้นหา
             const dropdownRef = useRef(null);
+            
             useEffect(() => {
                 const handleClickOutside = (event) => { if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsOpen(false); };
                 document.addEventListener("mousedown", handleClickOutside);
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
+            
             const toggleOption = (opt) => { if (selected.includes(opt)) onChange(selected.filter(x => x !== opt)); else onChange([...selected, opt]); };
+            
+            // 🔥 กรองตัวเลือกตามคำค้นหา
+            const filteredOptions = searchable && searchTerm ? options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())) : options;
+
             return (
                 <div className="relative inline-block text-left w-full md:w-auto" ref={dropdownRef}>
                     <button type="button" onClick={() => setIsOpen(!isOpen)} className="border border-slate-300 rounded-lg px-3 py-1.5 text-xs md:text-sm bg-white flex items-center justify-between w-full md:min-w-[140px] shadow-sm hover:bg-slate-50 transition-colors h-[38px]">
@@ -317,19 +334,36 @@
                         <i className={`fa-solid fa-chevron-down text-[10px] md:text-xs text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}></i>
                     </button>
                     {isOpen && (
-                        <div className="origin-top-left sm:origin-top-right absolute left-0 sm:left-auto sm:right-0 mt-2 w-56 max-w-[90vw] rounded-xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 z-[100] overflow-hidden">
-                            <div className="max-h-[50vh] sm:max-h-60 overflow-y-auto py-2 custom-scrollbar">
+                        <div className="origin-top-left sm:origin-top-right absolute left-0 sm:left-auto sm:right-0 mt-2 w-64 max-w-[90vw] rounded-xl shadow-xl bg-white ring-1 ring-black ring-opacity-5 z-[100] overflow-hidden flex flex-col">
+                            {/* 🔥 ช่องค้นหา (แสดงเฉพาะเมื่อ searchable = true) */}
+                            {searchable && (
+                                <div className="p-2 border-b border-slate-100 bg-slate-50 shrink-0">
+                                    <div className="relative">
+                                        <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                                        <input 
+                                            type="text" 
+                                            placeholder="ค้นหา..." 
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            className="w-full pl-8 pr-2 py-1.5 text-xs border border-slate-300 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            <div className="max-h-[40vh] sm:max-h-60 overflow-y-auto py-2 custom-scrollbar">
                                 <label className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors">
-                                    <input type="checkbox" checked={selected?.length === 0} onChange={() => onChange([])} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
+                                    <input type="checkbox" checked={selected?.length === 0} onChange={() => { onChange([]); setSearchTerm(""); }} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
                                     <span className="text-sm font-bold text-slate-800">เลือกทั้งหมด</span>
                                 </label>
                                 <div className="h-px bg-slate-100 my-1"></div>
-                                {options?.map(opt => (
+                                {filteredOptions.length > 0 ? filteredOptions.map(opt => (
                                     <label key={opt} className="flex items-center px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors">
                                         <input type="checkbox" checked={selected?.includes(opt)} onChange={() => toggleOption(opt)} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
                                         <span className="text-sm text-slate-600 truncate" title={opt}>{opt}</span>
                                     </label>
-                                ))}
+                                )) : (
+                                    <div className="px-4 py-3 text-xs text-slate-400 text-center">ไม่พบข้อมูลที่ค้นหา</div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -373,15 +407,29 @@
             );
         };
 
-        const ChartComponent = ({ type, data, options }) => {
+        const ChartComponent = ({ type, data, options, onClick }) => {
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
             useEffect(() => {
                 if (chartInstance.current) chartInstance.current.destroy();
                 const ctx = chartRef.current.getContext('2d');
-                chartInstance.current = new Chart(ctx, { type, data, options });
+                
+                const enhancedOptions = {
+                    ...options,
+                    onHover: (event, chartElement) => {
+                        event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+                    },
+                    onClick: (event, elements) => {
+                        if (elements.length > 0 && onClick) {
+                            const element = elements[0];
+                            onClick({ datasetIndex: element.datasetIndex, index: element.index });
+                        }
+                    }
+                };
+
+                chartInstance.current = new Chart(ctx, { type, data, options: enhancedOptions });
                 return () => { if (chartInstance.current) chartInstance.current.destroy(); };
-            }, [type, data, options]);
+            }, [type, data, options, onClick]);
             return <canvas ref={chartRef} style={{ width: '100%', height: '100%' }} />;
         };
 
@@ -1209,6 +1257,11 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const [searchTerm, setSearchTerm] = useState('');
           const [calendarFilterTeams, setCalendarFilterTeams] = useState([]); // 🔥 ฟิลเตอร์ทีมในปฏิทิน
           const [tableFilterRegionRespon, setTableFilterRegionRespon] = useState([]); // 🔥 เพิ่มตัวกรอง Region Respon
+          
+          // 🔥 เพิ่ม State สำหรับตัวกรองใหม่ของ NS
+          const [tableFilterItemCode, setTableFilterItemCode] = useState([]);
+          const [tableFilterItemQty, setTableFilterItemQty] = useState([]);
+          const [tableFilterType, setTableFilterType] = useState([]);
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
           const [colWidths, setColWidths] = useState({}); 
@@ -1529,6 +1582,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               setTableFilterDate([]); setTableFilterYear([]); setTableFilterStatus([]);
               setTableFilterOverdue([]); setSortConfig({ key: null, direction: null });
               setTableFilterRegionRespon([]); // 🔥 ล้างค่าตัวกรองใหม่ด้วย
+              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);
               setVisibleRows(100);
               setShowDuplicatesOnly(false);
           };
@@ -1706,6 +1760,58 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               }
           };
 
+          // ==========================================
+          // 🔥 DRILL-DOWN LOGIC (คลิกกราฟแล้วไปหน้าตาราง)
+          // ==========================================
+          const handleChartDrillDown = (filters) => {
+              setFilterMonth('All'); setFilterTeams([]); setSearchTerm(''); 
+              setTableFilterTeams([]); setTableFilterDate([]); setTableFilterYear([]); 
+              setTableFilterStatus([]); setTableFilterOverdue([]); setTableFilterRegionRespon([]);
+              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);
+              setVisibleRows(100); setShowDuplicatesOnly(false);
+
+              if (filters.status) setTableFilterStatus(filters.status);
+              if (filters.overdue) setTableFilterOverdue(filters.overdue);
+
+              if (filters.month) {
+                  setTableFilterDate(filters.month);
+              } else if (filterMonth !== 'All') {
+                  setTableFilterDate([monthNames[parseInt(filterMonth) - 1]]);
+              }
+
+              if (filters.team) {
+                  setTableFilterTeams(filters.team);
+              } else if (filterTeams.length > 0) {
+                  setTableFilterTeams(filterTeams);
+              }
+              
+              if (filters.year) {
+                  setTableFilterYear(filters.year);
+              } else if (dashboardView === 'subcontract') {
+                  if (dashboardYear === '2026') {
+                      setTableFilterYear(['2026']);
+                  } else if (dashboardYear === 'history') {
+                      // 🔥 ส่งรหัสลับไปบอกตารางให้ดึงงานเก่าทั้งหมด
+                      setTableFilterYear(['__HISTORY__']);
+                  }
+              }
+
+              startTransition(() => {
+                  setTasksSubTab(dashboardView);
+                  setActiveTab('tasks');
+              });
+              if (window.innerWidth <= 1024) setIsSidebarOpen(false);
+          };
+
+          const getStatusesForDrillDown = (isCollected) => {
+              const availableStatuses = Object.keys(statusCounts);
+              if (isCollected) {
+                  return availableStatuses.filter(s => s.toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/));
+              } else {
+                  return availableStatuses.filter(s => !s.toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/));
+              }
+          };
+
           // ================== DATA PROCESSING & TABLE ==================
           const finalTableTasks = useMemo(() => {
               let tableTasks = [...(currentTasksTable || [])]; 
@@ -1726,9 +1832,62 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
               if (tableFilterTeams?.length > 0 && t_teamCol) tableTasks = tableTasks.filter(t => tableFilterTeams.includes(getCleanTeam(t[t_teamCol])));
               if (tableFilterCID !== 'All' && t_cidCol) tableTasks = tableTasks.filter(t => (t[t_cidCol] ? String(t[t_cidCol]).trim() : '') === tableFilterCID);
-              if (tableFilterYear?.length > 0 && t_equipYearCol) tableTasks = tableTasks.filter(t => tableFilterYear.includes(t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : ''));
               if (tableFilterStatus?.length > 0 && t_statusCol) tableTasks = tableTasks.filter(t => tableFilterStatus.includes(getCleanStatus(t[t_statusCol])));
-              if (tableFilterDate?.length > 0) { tableTasks = tableTasks.filter(t => { const d = parseDateHelper(t_collectionDateCol ? t[t_collectionDateCol] : null); return d && tableFilterDate.includes(monthNames[d.getMonth()]); }); }
+              
+              const cancelColMatch = t_getCol(['ยกเลิก', 'duejob', 'cancel']);
+              
+              if (tableFilterDate?.length > 0) { 
+                  tableTasks = tableTasks.filter(t => { 
+                      let dStr = t_collectionDateCol ? t[t_collectionDateCol] : null;
+                      if (!dStr || String(dStr).trim() === '' || String(dStr).trim() === '-') dStr = cancelColMatch ? t[cancelColMatch] : null;
+                      if (!dStr || String(dStr).trim() === '' || String(dStr).trim() === '-') dStr = new Date().toISOString();
+                      const d = parseDateHelper(dStr); 
+                      return d && tableFilterDate.includes(monthNames[d.getMonth()]); 
+                  }); 
+              }
+              
+              // 🔥 ระบบค้นหาปีแบบใหม่ ฉลาดและแม่นยำ 100%
+              if (tableFilterYear?.length > 0) {
+                  tableTasks = tableTasks.filter(t => {
+                      let yStr = t_equipYearCol && t[t_equipYearCol] ? String(t[t_equipYearCol]).trim() : '';
+                      let y = null;
+                      
+                      // สกัดตัวเลขปีออกจากข้อความ
+                      if (yStr) {
+                          const yMatch = yStr.match(/\d{4}/);
+                          if (yMatch) y = parseInt(yMatch[0], 10); else y = parseInt(yStr, 10);
+                          if (y < 100) y += 2000; if (y > 2500) y -= 543;
+                      }
+                      // ถ้าไม่มีปี ให้ไปดึงจากวันที่เข้าเก็บ หรือ วันที่ยกเลิก
+                      if (!y) {
+                          let dStr = t_collectionDateCol ? t[t_collectionDateCol] : null;
+                          if (!dStr || String(dStr).trim() === '' || String(dStr).trim() === '-') dStr = cancelColMatch ? t[cancelColMatch] : null;
+                          const d = parseDateHelper(dStr);
+                          if (d) { y = d.getFullYear(); if (y > 2500) y -= 543; }
+                      }
+                      if (!y) y = new Date().getFullYear();
+                      
+                      // 1. ถ้ารับรหัสลับ History มา ให้โชว์งานที่เก่ากว่าปี 2026 ทั้งหมด
+                      if (tableFilterYear.includes('__HISTORY__')) return y < 2026;
+
+                      // 2. ถ้าค้นหาค่าว่าง
+                      if (tableFilterYear.includes('')) {
+                          if (!yStr || yStr === '') return true;
+                      }
+
+                      // 3. แปลงค่าที่ค้นหาให้เป็นตัวเลขแล้วเทียบกัน
+                      const filterYearsAsNumbers = tableFilterYear.map(fy => {
+                          if (!fy || String(fy).trim() === '') return null;
+                          const match = String(fy).match(/\d{4}/);
+                          let num = match ? parseInt(match[0], 10) : parseInt(fy, 10);
+                          if (num < 100) num += 2000; if (num > 2500) num -= 543;
+                          return num;
+                      });
+
+                      return filterYearsAsNumbers.includes(y);
+                  });
+              }
+
               if (tableFilterOverdue?.length > 0 && t_overDueCol) {
                   tableTasks = tableTasks.filter(t => {
                       const cleanVal = getCleanStatus(t[t_overDueCol] || '').toLowerCase(); if (cleanVal === 'ไม่ระบุสถานะ' || !cleanVal) return false;
@@ -1743,7 +1902,14 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               if (sortConfig.key && sortConfig.direction) {
                   tableTasks.sort((a, b) => sortConfig.direction === 'asc' ? String(a[sortConfig.key] || '').localeCompare(String(b[sortConfig.key] || ''), 'th', { numeric: true }) : String(b[sortConfig.key] || '').localeCompare(String(a[sortConfig.key] || ''), 'th', { numeric: true }));
               } else {
-                  tableTasks.sort((a, b) => parseInt(a._rowIndex) - parseInt(b._rowIndex));
+                  // 🔥 แก้ไขให้งานล่าสุด (บรรทัดล่างสุดใน Sheet) ขึ้นก่อน
+                  tableTasks.sort((a, b) => {
+                      const rowA = parseInt(a._rowIndex);
+                      const rowB = parseInt(b._rowIndex);
+                      if (rowA === 0) return -1; // งานที่เพิ่ง Assign ใหม่จากเว็บ ให้อยู่บนสุดเสมอ
+                      if (rowB === 0) return 1;
+                      return rowB - rowA; // เรียงจากมากไปน้อย (ล่าสุดขึ้นก่อน)
+                  });
               }
               // 🔥 กรองตาม Region Responsible (เฉพาะหน้า Subcontract)
              let processedTasks = [...tableTasks];
@@ -1752,20 +1918,40 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               if (tasksSubTab === 'subcontract') {
                   const nsTeamCol = getTeamColumnName(nsColumns);
                   const nsCidCol = nsColumns.find(c => ['cid', 'circuitno'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                  const nsSiteCol = nsColumns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
                   
                   const nsCidMap = {};
                   if (nsCidCol && nsTeamCol) {
                       nsTasks.forEach(nt => {
                           if (!nt) return;
-                          const cid = nt[nsCidCol] ? String(nt[nsCidCol]).trim() : '';
-                          if (cid) nsCidMap[cid] = nt[nsTeamCol];
+                          const cid = nt[nsCidCol] ? String(nt[nsCidCol]).trim().toLowerCase() : '';
+                          const site = nsSiteCol && nt[nsSiteCol] ? String(nt[nsSiteCol]).trim().toLowerCase() : '';
+                          if (cid) {
+                              // 🔥 เก็บแบบมี Site Type เป็นกุญแจหลัก (เช่น 12345_terminate)
+                              if (site) nsCidMap[`${cid}_${site}`] = nt[nsTeamCol];
+                              // 🔥 เก็บแบบไม่มี Site Type สำรองไว้ด้วย (เผื่อฝั่ง Subcon ลืมใส่ Site)
+                              if (!nsCidMap[cid]) nsCidMap[cid] = nt[nsTeamCol]; 
+                          }
                       });
                   }
 
+                  const subSiteCol = currentColumnsTable.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+
                   // ใส่ข้อมูล Region_Respon ลงในทุกแถวเพื่อให้ระบบรู้จักคอลัมน์นี้ก่อนกรอง
                   processedTasks = processedTasks.map(t => {
-                      const cid = t_cidCol ? String(t[t_cidCol] || '').trim() : '';
-                      return { ...t, 'Region_Respon': nsCidMap[cid] || '-' };
+                      const cid = t_cidCol ? String(t[t_cidCol] || '').trim().toLowerCase() : '';
+                      const site = subSiteCol && t[subSiteCol] ? String(t[subSiteCol]).trim().toLowerCase() : '';
+                      
+                      let regionRespon = '-';
+                      if (cid) {
+                          // 🔥 ค้นหาแบบเจาะจง Site Type ก่อน ถ้าไม่เจอค่อยหาแบบ CID เพียวๆ
+                          if (site && nsCidMap[`${cid}_${site}`]) {
+                              regionRespon = nsCidMap[`${cid}_${site}`];
+                          } else if (nsCidMap[cid]) {
+                              regionRespon = nsCidMap[cid];
+                          }
+                      }
+                      return { ...t, 'Region_Respon': regionRespon };
                   });
 
                   // 🟢 2. กรองตาม Region Responsible (ถ้ามีการเลือก)
@@ -1785,7 +1971,67 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               }
 
               if (tasksSubTab === 'ns') {
+                  // 🔥 4. กรอง ItemCode และ Type (ทำก่อน Grouping)
+                  const t_itemCodeCol = t_getCol(['itemcode', 'รหัสอุปกรณ์']);
+                  const t_typeCol = t_getCol(['type', 'ประเภท']);
+
+                  if (tableFilterItemCode?.length > 0 && t_itemCodeCol) {
+                      processedTasks = processedTasks.filter(t => tableFilterItemCode.includes(String(t[t_itemCodeCol] || '').trim()));
+                  }
+                  if (tableFilterType?.length > 0 && t_typeCol) {
+                      processedTasks = processedTasks.filter(t => tableFilterType.includes(String(t[t_typeCol] || '').trim()));
+                  }
+
                   const grouped = new Map();
+                  processedTasks.forEach(t => {
+                      const cid = t_cidCol ? t[t_cidCol] : '';
+                      const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
+                      const cleanCid = String(cid).trim();
+                      
+                      if (!cleanCid || cleanCid === '-' || cleanCid.toLowerCase().includes('ไม่ระบุ') || cleanCid.length < 3) {
+                          grouped.set(t.id, { ...t, _groupDocs: [t.id], _groupRows: [t._rowIndex] });
+                          return;
+                      }
+                      
+                      const groupKey = `${cleanCid}_${st}`.trim();
+                      if (!grouped.has(groupKey)) {
+                          grouped.set(groupKey, { 
+                              ...t, 
+                              _groupDocs: [t.id],
+                              _groupRows: [t._rowIndex],
+                              _equipList: [{ item: t[itemColMatch]||'', sn: t[snColMatch]||'' }]
+                          });
+                      } else {
+                          const existing = grouped.get(groupKey);
+                          existing._groupDocs.push(t.id);
+                          existing._groupRows.push(t._rowIndex);
+                          existing._equipList.push({ item: t[itemColMatch]||'', sn: t[snColMatch]||'' });
+                      }
+                  });
+
+                  processedTasks = Array.from(grouped.values()).map(group => {
+                      if (group._equipList && group._equipList.length > 0) {
+                          group._equipList.sort((a, b) => {
+                              const aHasSn = (a.sn || '').trim() !== '' ? 1 : 0;
+                              const bHasSn = (b.sn || '').trim() !== '' ? 1 : 0;
+                              return bHasSn - aHasSn;
+                          });
+                          if(itemColMatch) group[itemColMatch] = group._equipList.map((e, i) => `${i+1}. ${e.item} [ SN: ${e.sn||'-'} ]`).join('\n');
+                          if(snColMatch) group[snColMatch] = group._equipList.map(e => e.sn).join('\n');
+                      }
+                      return group;
+                  });
+
+                  // 🔥 5. กรองจำนวนรายการ (Qty) (ทำหลัง Grouping เพราะต้องนับจำนวนในกลุ่ม)
+                  if (tableFilterItemQty?.length > 0) {
+                      processedTasks = processedTasks.filter(group => {
+                          const qty = group._equipList ? group._equipList.length : 1;
+                          return tableFilterItemQty.includes(`${qty} Ea`);
+                      });
+                  }
+              }
+              return processedTasks;
+          }, [currentTasksTable, currentColumnsTable, tasksSubTab, tableFilterTeams, tableFilterCID, tableFilterYear, tableFilterStatus, tableFilterDate, tableFilterOverdue, tableFilterRegionRespon, tableFilterItemCode, tableFilterItemQty, tableFilterType, sortConfig, searchTerm, showDuplicatesOnly]);
                   processedTasks.forEach(t => {
                       const cid = t_cidCol ? t[t_cidCol] : '';
                       const st = siteTypeColMatch ? t[siteTypeColMatch] : '';
@@ -1855,10 +2101,25 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const d_overDueCol = (dashboardColumns || []).find(c => { const lc = c ? String(c).toLowerCase().replace(/[\s_]+/g, '') : ''; return lc.includes('นัดหมายลูกค้า') || lc.includes('over3') || lc.includes('เกินกำหนด'); }) || '';
           const d_collectionDateCol = (dashboardColumns || []).find(c => c ? String(c).replace(/[\s_]+/g, '').includes('วันที่เข้าเก็บ') : false) || d_getCol(['วันที่', 'date']) || dashboardColumns?.[0] || '';
           const d_siteTypeCol = d_getCol(['sitetype', 'site']) || '';
+          
+          // 🔥 1. เพิ่มการหาคอลัมน์ "วันที่ยกเลิกใช้งาน"
+          const d_cancelDateCol = d_getCol(['ยกเลิก', 'duejob', 'cancel']) || '';
 
+          // 🔥 2. แก้ไข Logic การดึงวันที่ตาม Lifecycle ของงาน (Priority: วันเข้าเก็บ -> วันยกเลิก)
           const getDashboardTaskEffectiveDateStr = (t) => {
-              const targetCol = d_collectionDateCol; let dateStr = targetCol ? t[targetCol] : null;
-              if (!dateStr || String(dateStr).trim() === '') { const today = new Date(); dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; }
+              // Priority 1: วันที่เข้าเก็บ (Collection Date)
+              let dateStr = d_collectionDateCol ? t[d_collectionDateCol] : null;
+              
+              // Priority 2: ถ้ายังไม่มีวันเข้าเก็บ ให้ใช้วันที่ยกเลิกใช้งาน (Cancel Date)
+              if (!dateStr || String(dateStr).trim() === '' || String(dateStr).trim() === '-') { 
+                  dateStr = d_cancelDateCol ? t[d_cancelDateCol] : null; 
+              }
+              
+              // Fallback: ถ้าไม่มีข้อมูลทั้งคู่ ให้ใช้วันนี้เป็นค่าเริ่มต้น
+              if (!dateStr || String(dateStr).trim() === '' || String(dateStr).trim() === '-') { 
+                  const today = new Date(); 
+                  dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`; 
+              }
               return dateStr;
           };
 
@@ -1912,7 +2173,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
           const getStatusColor = (status, opacity = 1) => {
               const s = status ? String(status).trim() : '';
-              // เช็คสีจากฝั่ง Region (NS) ก่อน
               if (masterData.nsStatuses) {
                   const nsStatusMatch = masterData.nsStatuses.find(st => st.name === s);
                   if (nsStatusMatch && nsStatusMatch.bg) {
@@ -1920,7 +2180,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                       return hexToRgbA(nsStatusMatch.bg, opacity);
                   }
               }
-              // เช็คสีจากฝั่ง Subcontract
               if (masterData.subconStatuses) {
                   const subconStatusMatch = masterData.subconStatuses.find(st => st.name === s);
                   if (subconStatusMatch && subconStatusMatch.bg) {
@@ -1954,19 +2213,26 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               return 99; 
           };
           const sortedStatuses = Object.keys(statusCounts).sort((a, b) => {
-              // 1. เช็คการเลือก (Selected มาก่อน)
               const isSelA = selectedStatuses.includes(a);
               const isSelB = selectedStatuses.includes(b);
               if (isSelA !== isSelB) return isSelA ? -1 : 1;
-
-              // 2. ถ้าสถานะเหมือนกัน (เลือกทั้งคู่ หรือไม่เลือกทั้งคู่) ให้เรียงตามตัวอักษร A-Z
               return a.localeCompare(b, 'en');
           });
           
           const chartStatusCounts = {}; chartFilteredTasks.forEach(t => { const s = getCleanStatus(t[d_statusCol]); chartStatusCounts[s] = (chartStatusCounts[s] || 0) + 1; });
           const chartSortedStatuses = Object.keys(chartStatusCounts).sort((a, b) => { const rA = getStatusRank(a), rB = getStatusRank(b); return rA !== rB ? rA - rB : chartStatusCounts[b] - chartStatusCounts[a]; });
           const statusChartData = { labels: chartSortedStatuses, datasets: [{ data: chartSortedStatuses.map(s => chartStatusCounts[s]), backgroundColor: chartSortedStatuses.map(s => getStatusColor(s, 0.8)), borderColor: chartSortedStatuses.map(s => getStatusColor(s, 1)), borderWidth: 2, hoverOffset: 6, borderRadius: 4 }] };
-          const statusChartOptions = { responsive: true, maintainAspectRatio: false, cutout: '75%', layout: { padding: 10 }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, datalabels: { display: false } } };
+          const statusChartOptions = { 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              cutout: '65%', 
+              layout: { padding: 10 }, 
+              plugins: { 
+                  legend: { display: false }, 
+                  tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8 }, 
+                  datalabels: { display: false } 
+              } 
+          };
 
           const dlStyle = { 
               color: '#ffffff', 
@@ -1976,38 +2242,64 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               textStrokeWidth: 4 
           };
 
-          // 🟢 คำนวณ % Complete รวมสำหรับ Doughnut Chart
           const totalCompletedCount = chartFilteredTasks.filter(t => getCleanStatus(t[d_statusCol]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/)).length;
           const overallPercentComplete = totalTasksCount > 0 ? Math.round((totalCompletedCount / totalTasksCount) * 100) : 0;
 
           let barChartData, barChartOptions, barChartTitle;
+          let totalBarCollected = 0; 
+          let totalBarOngoing = 0;   
+
           if (dashboardView === 'subcontract') {
-              barChartTitle = "สรุปจัดเก็บรายเดือน";
+              barChartTitle = "Monthly Collection Summary";
               const monthlyData = {}; for (let i = 1; i <= 12; i++) monthlyData[i] = { collected: 0, ongoing: 0, percent: 0 };
+              
               chartFilteredTasks.forEach(t => {
                   const d = parseDateHelper(getDashboardTaskEffectiveDateStr(t));
                   if (d) {
                       let m = d.getMonth() + 1;
                       if (m >= 1 && m <= 12) {
                           const isCollected = getCleanStatus(t[d_statusCol]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
-                          if (isCollected) monthlyData[m].collected++; else monthlyData[m].ongoing++;
+                          if (isCollected) { monthlyData[m].collected++; totalBarCollected++; } 
+                          else { monthlyData[m].ongoing++; totalBarOngoing++; }
                       }
                   }
               });
               
-              // 🟢 คำนวณ % Complete ของแต่ละเดือน
               for (let i = 1; i <= 12; i++) {
                   const totalMonth = monthlyData[i].collected + monthlyData[i].ongoing;
                   monthlyData[i].percent = totalMonth > 0 ? Math.round((monthlyData[i].collected / totalMonth) * 100) : 0;
               }
 
-              // 🟢 เพิ่ม % ลงใน Labels แกน X
               const monthLabelsWithPercent = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."].map((m, i) => [m, `${monthlyData[i+1].percent}%`]);
 
-              barChartData = { labels: monthLabelsWithPercent, datasets: [ { label: 'Collected (CIDs)', data: Object.values(monthlyData).map(d => d.collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, { label: 'Ongoing (CIDs)', data: Object.values(monthlyData).map(d => d.ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } ] };
+              barChartData = { 
+                  labels: monthLabelsWithPercent, 
+                  datasets: [ 
+                      { 
+                          label: 'Collected (CIDs)', 
+                          data: Object.values(monthlyData).map(d => d.collected), 
+                          backgroundColor: 'rgba(16, 185, 129, 0.8)', // 🔥 สีทึบ 80%
+                          hoverBackgroundColor: 'rgba(16, 185, 129, 1)', // 🔥 สว่างขึ้น 100% ตอนชี้
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', // 🔥 กรอบสีเทาเข้มตอนชี้
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      }, 
+                      { 
+                          label: 'Ongoing (CIDs)', 
+                          data: Object.values(monthlyData).map(d => d.ongoing), 
+                          backgroundColor: 'rgba(245, 158, 11, 0.8)', 
+                          hoverBackgroundColor: 'rgba(245, 158, 11, 1)', 
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', 
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      } 
+                  ] 
+              };
               barChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { ...dlStyle, font: { weight: 'bold', size: 13, family: 'Prompt' } } }, scales: { y: { beginAtZero: true } } };
           } else {
-              barChartTitle = "สรุปจัดเก็บตาม Job Year";
+              barChartTitle = "Collection by Job Year";
               const yearlyData = {};
               chartFilteredTasks.forEach(t => {
                   let yStr = d_equipYearCol && t[d_equipYearCol] ? String(t[d_equipYearCol]).trim() : '';
@@ -2016,7 +2308,8 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   if (!yearlyData[yStr]) yearlyData[yStr] = { collected: 0, ongoing: 0 };
                   
                   const isCollected = getCleanStatus(t[d_statusCol]).toLowerCase().match(/(สำเร็จ|เรียบร้อย|complete|done|100%)/);
-                  if (isCollected) yearlyData[yStr].collected++; else yearlyData[yStr].ongoing++;
+                  if (isCollected) { yearlyData[yStr].collected++; totalBarCollected++; } 
+                  else { yearlyData[yStr].ongoing++; totalBarOngoing++; }
               });
               
               const sortedYears = Object.keys(yearlyData).sort((a, b) => {
@@ -2025,7 +2318,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                   return a.localeCompare(b, 'en', { numeric: true });
               });
 
-              // 🟢 คำนวณ % Complete ของแต่ละปี
               const yearLabelsWithPercent = sortedYears.map(y => {
                   const totalYear = yearlyData[y].collected + yearlyData[y].ongoing;
                   const pct = totalYear > 0 ? Math.round((yearlyData[y].collected / totalYear) * 100) : 0;
@@ -2035,8 +2327,26 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               barChartData = { 
                   labels: yearLabelsWithPercent, 
                   datasets: [ 
-                      { label: 'Collected (CIDs)', data: sortedYears.map(y => yearlyData[y].collected), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 }, 
-                      { label: 'Ongoing (CIDs)', data: sortedYears.map(y => yearlyData[y].ongoing), backgroundColor: 'rgba(245, 158, 11, 0.8)', borderRadius: 4 } 
+                      { 
+                          label: 'Collected (CIDs)', 
+                          data: sortedYears.map(y => yearlyData[y].collected), 
+                          backgroundColor: 'rgba(16, 185, 129, 0.8)', 
+                          hoverBackgroundColor: 'rgba(16, 185, 129, 1)', 
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', 
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      }, 
+                      { 
+                          label: 'Ongoing (CIDs)', 
+                          data: sortedYears.map(y => yearlyData[y].ongoing), 
+                          backgroundColor: 'rgba(245, 158, 11, 0.8)', 
+                          hoverBackgroundColor: 'rgba(245, 158, 11, 1)', 
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', 
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      } 
                   ] 
               };
               barChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, datalabels: { ...dlStyle, font: { weight: 'bold', size: 13, family: 'Prompt' } } }, scales: { y: { beginAtZero: true }, x: { stacked: false } } };
@@ -2046,72 +2356,128 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           // CONDITIONAL CHART LOGIC v2.3.0 (Enhanced NS View)
           // ==========================================
           let teamChartData, unassignedChartData, teamChartOptions, unassignedChartOptions;
+          let totalPendingCount = 0; 
+          let totalTeamCompleted = 0; 
+          let totalTeamOnProcess = 0; 
+          let totalSubconTeamTasks = 0; 
           const allActiveTeams = [...new Set(chartFilteredTasks.map(t => getCleanTeam(t[d_teamCol])))].sort();
 
           if (dashboardView === 'ns') {
-              // --- LOGIC สำหรับ REGION TASKS (NS) ---
               const completedKeywords = ["เก็บอุปกรณ์เรียบร้อย รอนำคืน SYM", "คืนอุปกรณ์ SYM เรียบร้อย", "เก็บเรียบร้อย", "Completed"];
               const isTaskCompleted = (status) => completedKeywords.some(k => String(status).includes(k));
               
               const mainTeams = allActiveTeams.filter(t => t !== 'ไม่ระบุทีม');
               const unassignedLabel = 'ไม่ระบุทีม';
 
-              // 1. กราฟทีมหลัก: แสดง 2 แท่ง (Completed vs On Process)
+              mainTeams.forEach(team => {
+                  const teamTasks = chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team);
+                  totalTeamCompleted += teamTasks.filter(t => isTaskCompleted(getCleanStatus(t[d_statusCol]))).length;
+                  totalTeamOnProcess += teamTasks.filter(t => !isTaskCompleted(getCleanStatus(t[d_statusCol]))).length;
+              });
+
               teamChartData = { 
-                  labels: mainTeams, 
+                  labels: mainTeams.map(shortenName), 
                   datasets: [
-                      { label: 'Completed', data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && isTaskCompleted(getCleanStatus(t[d_statusCol]))).length), backgroundColor: 'rgba(16, 185, 129, 0.8)', borderRadius: 4 },
-                      { label: 'On Process', data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && !isTaskCompleted(getCleanStatus(t[d_statusCol]))).length), backgroundColor: 'rgba(59, 130, 246, 0.8)', borderRadius: 4 }
+                      { 
+                          label: 'Completed', 
+                          data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && isTaskCompleted(getCleanStatus(t[d_statusCol]))).length), 
+                          backgroundColor: 'rgba(16, 185, 129, 0.8)', 
+                          hoverBackgroundColor: 'rgba(16, 185, 129, 1)', 
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', 
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      },
+                      { 
+                          label: 'On Process', 
+                          data: mainTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && !isTaskCompleted(getCleanStatus(t[d_statusCol]))).length), 
+                          backgroundColor: 'rgba(245, 158, 11, 0.8)', 
+                          hoverBackgroundColor: 'rgba(245, 158, 11, 1)', 
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b', 
+                          hoverBorderWidth: 2, 
+                          borderRadius: 4 
+                      } 
                   ] 
               };
 
-              // 2. กราฟไม่ระบุทีม: แยกตาม Status จริง (ของใครของมัน)
               const unassignedTasks = chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === unassignedLabel);
+              totalPendingCount = unassignedTasks.length; 
               const unassignedStatuses = [...new Set(unassignedTasks.map(t => getCleanStatus(t[d_statusCol])))].sort();
 
               unassignedChartData = {
                   labels: [unassignedLabel],
-                  datasets: unassignedStatuses.map(status => ({
-                      label: status,
-                      data: [unassignedTasks.filter(t => getCleanStatus(t[d_statusCol]) === status).length],
-                      backgroundColor: getStatusColor(status, 0.8),
-                      borderColor: getStatusColor(status, 1),
-                      borderWidth: 1
-                  }))
+                  datasets: unassignedStatuses.map(status => {
+                      const baseColor = getStatusColor(status, 1);
+                      return {
+                          label: status,
+                          data: [unassignedTasks.filter(t => getCleanStatus(t[d_statusCol]) === status).length],
+                          backgroundColor: baseColor.replace('1)', '0.8)'),
+                          hoverBackgroundColor: baseColor,
+                          borderColor: 'transparent',
+                          hoverBorderColor: '#1e293b',
+                          borderWidth: 0,
+                          hoverBorderWidth: 2
+                      };
+                  })
               };
 
-              // 3. Options สำหรับทีมหลัก (ตัวเลขอยู่กึ่งกลาง)
               teamChartOptions = { 
                   responsive: true, maintainAspectRatio: false, 
                   plugins: { 
                       legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, family: 'Prompt' } } }, 
-                      datalabels: { ...dlStyle, anchor: 'center', align: 'center', offset: 0 } // 🔥 ตัวเลขอยู่กึ่งกลาง
+                      datalabels: { ...dlStyle, anchor: 'center', align: 'center', offset: 0 }
                   }, 
                   scales: { y: { beginAtZero: true, grid: { display: false } } } 
               };
 
-              // 4. Options สำหรับไม่ระบุทีม (Legend อยู่ด้านล่างเหมือน Subcontract)
               unassignedChartOptions = {
                   responsive: true, maintainAspectRatio: false,
+                  layout: { padding: { top: 30 } }, 
                   plugins: {
-                      legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9, family: 'Prompt' } } },
-                      datalabels: { ...dlStyle, anchor: 'center', align: 'center' }
+                      legend: { display: false }, 
+                      tooltip: {
+                          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                          padding: 12,
+                          cornerRadius: 8,
+                          callbacks: {
+                              label: function(context) {
+                                  return ` ${context.dataset.label}: ${context.raw} CIDs`;
+                              }
+                          }
+                      },
+                      datalabels: { 
+                          ...dlStyle, // 🔥 กลับมาใช้สีขาว ขอบดำ ตามต้นฉบับ
+                          display: true, 
+                          anchor: 'end', 
+                          align: 'top',
+                          offset: 4
+                      }
                   },
-                  scales: { y: { beginAtZero: true, grid: { display: false } } }
+                  scales: { 
+                      y: { beginAtZero: true, grid: { display: false }, ticks: { display: false } },
+                      x: { grid: { display: false }, ticks: { display: false } } 
+                  }
               };
 
           } else {
-              // --- LOGIC เดิมสำหรับ SUBCONTRACT ---
+              totalSubconTeamTasks = chartFilteredTasks.filter(t => allActiveTeams.includes(getCleanTeam(t[d_teamCol]))).length;
               const activeStatusesForTeam = [...new Set(chartFilteredTasks.map(t => getCleanStatus(t[d_statusCol])))];
               teamChartData = { 
                   labels: allActiveTeams, 
-                  datasets: activeStatusesForTeam.map(status => ({ 
-                      label: status, 
-                      data: allActiveTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && getCleanStatus(t[d_statusCol]) === status).length), 
-                      backgroundColor: getStatusColor(status, 0.8), 
-                      borderColor: getStatusColor(status, 1), 
-                      borderWidth: 1 
-                  })) 
+                  datasets: activeStatusesForTeam.map(status => {
+                      const baseColor = getStatusColor(status, 1);
+                      return { 
+                          label: status, 
+                          data: allActiveTeams.map(team => chartFilteredTasks.filter(t => getCleanTeam(t[d_teamCol]) === team && getCleanStatus(t[d_statusCol]) === status).length), 
+                          backgroundColor: baseColor.replace('1)', '0.8)'),
+                          hoverBackgroundColor: baseColor,
+                          borderColor: 'transparent', 
+                          hoverBorderColor: '#1e293b',
+                          borderWidth: 0,
+                          hoverBorderWidth: 2
+                      };
+                  }) 
               };
               teamChartOptions = { 
                   responsive: true, maintainAspectRatio: false, 
@@ -2121,16 +2487,31 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               unassignedChartData = null;
           }
 
-          // กราฟเกินกำหนด (Overdue)
+          let totalOverdue = 0; 
           const overdueByTeamCounts = {}; allActiveTeams.forEach(t => overdueByTeamCounts[t] = 0);
           chartFilteredTasks.forEach(t => {
               const val = d_overDueCol ? getCleanStatus(t[d_overDueCol]) : '';
               if (val && val !== 'ไม่ระบุสถานะ') {
                   const m = val.match(/-?\d+/); const num = m ? parseInt(m[0], 10) : NaN;
-                  if (val.includes('เกิน') || val.includes('over') || num < 0) overdueByTeamCounts[getCleanTeam(t[d_teamCol])]++;
+                  if (val.includes('เกิน') || val.includes('over') || num < 0) {
+                      overdueByTeamCounts[getCleanTeam(t[d_teamCol])]++;
+                      totalOverdue++;
+                  }
               }
           });
-          const overdueChartData = { labels: allActiveTeams, datasets: [{ label: 'เกินกำหนดนัดหมาย (CIDs)', data: allActiveTeams.map(t => overdueByTeamCounts[t]), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgba(220, 38, 38, 1)', borderWidth: 1 }] };
+          const overdueChartData = { 
+              labels: allActiveTeams, 
+              datasets: [{ 
+                  label: 'เกินกำหนดนัดหมาย (CIDs)', 
+                  data: allActiveTeams.map(t => overdueByTeamCounts[t]), 
+                  backgroundColor: 'rgba(239, 68, 68, 0.8)', 
+                  hoverBackgroundColor: 'rgba(239, 68, 68, 1)', 
+                  borderColor: 'transparent', 
+                  hoverBorderColor: '#1e293b', 
+                  borderWidth: 0, 
+                  hoverBorderWidth: 2 
+              }] 
+          };
           const overdueChartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, datalabels: dlStyle }, scales: { y: { beginAtZero: true } } };
 
           // ================== CALENDAR CALCULATIONS ==================
@@ -2148,7 +2529,6 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
 
               return (tasks || []).filter(t => {
                   const sameDate = isSameDate(calDateCol ? t[calDateCol] : null, dateObj);
-                  // 🔥 กรองตามทีมที่เลือกในปฏิทิน
                   const teamMatch = calendarFilterTeams.length === 0 || calendarFilterTeams.includes(getCleanTeam(t[calTeamCol]));
                   return sameDate && teamMatch;
               }).sort((a, b) => {
@@ -2260,7 +2640,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                         onClick={() => { 
                             if (!isAdmin) {
                                 const pass = prompt("กรุณาใส่รหัสผ่านเพื่อเข้าถึงฐานข้อมูล:");
-                                if (pass === "Kung0p@p") { // 🔥 ตั้งรหัสผ่านตรงนี้
+                                if (pass === "Kung0p@p") { 
                                     setIsAdmin(true);
                                     startTransition(() => { setActiveTab('master_data'); });
                                 } else {
@@ -2331,70 +2711,204 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                           })}
                       </div>
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-6">
-                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col relative">
-                              <div className="flex justify-between items-center mb-4"><h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-pie text-blue-600"></i> สัดส่วนสถานะงาน</h3>{selectedStatuses?.length > 0 && <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Filtered</span>}</div>
-                              <div className="relative flex-1 w-full flex flex-col items-center justify-center min-h-[250px] md:min-h-[300px]">
+                          <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col relative overflow-hidden">
+                              <div className="flex justify-between items-center mb-4">
+                                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
+                                      <i className="fa-solid fa-chart-pie text-blue-600"></i> Overall Progress
+                                  </h3>
+                              </div>
+
+                              <div className="relative flex-1 w-full flex flex-col md:flex-row items-center justify-center gap-6 md:gap-8 min-h-[250px] md:min-h-[300px]">
                                   {chartFilteredTasks?.length > 0 ? (
-                                      <><div className="relative mx-auto flex items-center justify-center w-48 h-48 md:w-60 md:h-60"><div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"><span className="text-3xl md:text-5xl font-extrabold text-slate-800 leading-none drop-shadow-md" style={{ textShadow: '1px 2px 3px rgba(0,0,0,0.2)' }}>{chartFilteredTasks?.length || 0}</span><span className="text-xs md:text-sm font-bold text-slate-500 uppercase tracking-widest mt-1.5">CIDs</span><span className="text-[10px] md:text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1 border border-emerald-200">Complete {overallPercentComplete}%</span></div><ChartComponent type="doughnut" data={statusChartData} options={statusChartOptions} /></div><div className="mt-6 md:mt-8 flex flex-wrap justify-center gap-x-4 gap-y-2 px-2">{(chartSortedStatuses || []).map(s => (<div key={s} className="flex items-center gap-1.5 text-[10px] md:text-xs font-medium text-slate-600"><span className="w-2.5 md:w-3 h-2.5 md:h-3 rounded-full shadow-sm" style={{ backgroundColor: getStatusColor(s, 1) }}></span>{s} <span className="text-slate-400">({chartStatusCounts[s]})</span></div>))}</div></>
+                                      <>
+                                          {/* กราฟโดนัท (อยู่ด้านซ้าย) 🔥 ปรับขนาดให้ใหญ่ขึ้น */}
+                                          <div className="relative flex items-center justify-center w-56 h-56 md:w-64 md:h-64 shrink-0">
+                                              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                                                  {/* 🔥 ทำให้ตัวเลขตรงกลางกดได้ พร้อมใส่ Hover Effect และเปลี่ยนเป็น Gradient สีฟ้า */}
+                                                  <div 
+                                                      className="flex flex-col items-center justify-center pointer-events-auto cursor-pointer hover:scale-110 transition-transform duration-300 group"
+                                                      onClick={() => handleChartDrillDown({ status: selectedStatuses?.length > 0 ? selectedStatuses : undefined })}
+                                                      title="คลิกเพื่อดูข้อมูลทั้งหมด"
+                                                  >
+                                                      <span className="text-5xl md:text-6xl font-black bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-600 text-transparent bg-clip-text drop-shadow-md leading-none">{chartFilteredTasks?.length || 0}</span>
+                                                      <span className="text-xs md:text-sm font-bold text-slate-400 uppercase tracking-[0.2em] mt-1 group-hover:text-blue-500 transition-colors">CIDs</span>
+                                                  </div>
+                                              </div>
+                                              <ChartComponent 
+                                                  type="doughnut" 
+                                                  data={statusChartData} 
+                                                  options={statusChartOptions} 
+                                                  onClick={({ index }) => {
+                                                      handleChartDrillDown({ status: [chartSortedStatuses[index]] });
+                                                  }}
+                                              />
+                                          </div>
+
+                                          <div className="flex flex-col items-center md:items-start justify-center relative cursor-pointer" onClick={() => handleChartDrillDown({ status: getStatusesForDrillDown(true) })} title="คลิกเพื่อดูงานที่เสร็จแล้วทั้งหมด">
+                                              <div className="absolute inset-0 bg-emerald-400 blur-3xl opacity-20 rounded-full w-32 h-32 -z-10 transform -translate-x-4"></div>
+                                              <span className="text-sm md:text-base font-black text-slate-400 uppercase tracking-widest mb-1">Complete</span>
+                                              <div className="text-6xl md:text-7xl lg:text-8xl font-black bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 text-transparent bg-clip-text drop-shadow-xl transform hover:scale-105 transition-transform duration-300">
+                                                  {overallPercentComplete}<span className="text-3xl md:text-4xl lg:text-5xl">%</span>
+                                              </div>
+                                          </div>
+                                      </>
                                   ) : <p className="text-slate-400 flex h-full items-center justify-center">ไม่มีข้อมูล</p>}
                               </div>
                           </div>
+                          
                           <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
-                              <h3 className="text-base md:text-lg font-bold mb-4 flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> {barChartTitle}</h3>
-                              <div className="relative h-60 md:h-72 w-full"><ChartComponent type="bar" data={barChartData} options={barChartOptions} /></div>
+                              <div className="flex justify-between items-start mb-4">
+                                  <div className="flex items-center gap-2">
+                                      <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-chart-column text-blue-600"></i> {barChartTitle}</h3>
+                                  </div>
+                                  <div className="bg-white border border-slate-200 rounded-lg shadow-sm flex overflow-hidden shrink-0 ml-2">
+                                      <div className="bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 flex flex-col items-center border-r border-slate-200 cursor-pointer" onClick={() => handleChartDrillDown({ status: getStatusesForDrillDown(true) })}>
+                                          <span className="text-lg font-black text-emerald-700 leading-none">{totalBarCollected}</span>
+                                          <span className="text-[10px] font-bold text-emerald-600 uppercase">Collected</span>
+                                      </div>
+                                      <div className="bg-amber-50 hover:bg-amber-100 transition-colors px-3 py-1.5 flex flex-col items-center cursor-pointer" onClick={() => handleChartDrillDown({ status: getStatusesForDrillDown(false) })}>
+                                          <span className="text-lg font-black text-amber-700 leading-none">{totalBarOngoing}</span>
+                                          <span className="text-[10px] font-bold text-amber-600 uppercase">Ongoing</span>
+                                      </div>
+                                  </div>
+                              </div>
+                              <div className="relative h-60 md:h-72 w-full">
+                                  <ChartComponent 
+                                      type="bar" 
+                                      data={barChartData} 
+                                      options={barChartOptions} 
+                                      onClick={({ datasetIndex, index }) => {
+                                          const isCollected = datasetIndex === 0;
+                                          const targetStatuses = getStatusesForDrillDown(isCollected);
+                                          if (dashboardView === 'subcontract') {
+                                              const monthName = monthNames[index]; 
+                                              handleChartDrillDown({ month: [monthName], status: targetStatuses });
+                                          } else {
+                                              let yearStr = barChartData.labels[index][0]; 
+                                              if (yearStr === 'ไม่ระบุปี') yearStr = ''; 
+                                              handleChartDrillDown({ year: [yearStr], status: targetStatuses });
+                                          }
+                                      }}
+                                  />
+                              </div>
                           </div>
-                          {/* ปรับปรุงการแสดงผลกราฟแยกทีม v2.3.0 (แยกสถานะงานค้าง) */}
+                          
                           <div className={`${dashboardView === 'ns' ? 'lg:col-span-3 grid grid-cols-1 lg:grid-cols-4 gap-6' : 'lg:col-span-2'}`}>
                               {dashboardView === 'ns' ? (
                                   <>
-                                      {/* กราฟทีมหลัก (3 ส่วน) */}
                                       <div className="lg:col-span-3 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200">
-                                          <div className="flex justify-between items-center mb-4">
-                                              <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
-                                                  <i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานแยกตามทีม (Completed vs On Process)
-                                              </h3>
+                                          <div className="flex justify-between items-start mb-4">
+                                              <div className="flex items-center gap-2">
+                                                  <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> Tasks by Team</h3>
+                                              </div>
+                                              <div className="bg-white border border-slate-200 rounded-lg shadow-sm flex overflow-hidden shrink-0 ml-2">
+                                                  <div className="bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 flex flex-col items-center border-r border-slate-200 cursor-pointer" onClick={() => handleChartDrillDown({ team: allActiveTeams.filter(t => t !== 'ไม่ระบุทีม'), status: getStatusesForDrillDown(true) })}>
+                                                      <span className="text-lg font-black text-emerald-700 leading-none">{totalTeamCompleted}</span>
+                                                      <span className="text-[10px] font-bold text-emerald-600 uppercase">Completed</span>
+                                                  </div>
+                                                  <div className="bg-blue-50 hover:bg-blue-100 transition-colors px-3 py-1.5 flex flex-col items-center cursor-pointer" onClick={() => handleChartDrillDown({ team: allActiveTeams.filter(t => t !== 'ไม่ระบุทีม'), status: getStatusesForDrillDown(false) })}>
+                                                      <span className="text-lg font-black text-blue-700 leading-none">{totalTeamOnProcess}</span>
+                                                      <span className="text-[10px] font-bold text-blue-600 uppercase">On Process</span>
+                                                  </div>
+                                              </div>
                                           </div>
                                           <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
                                               <div className="min-w-[500px] h-full">
-                                                  {chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                                  {chartFilteredTasks?.length > 0 ? (
+                                                      <ChartComponent 
+                                                          type="bar" 
+                                                          data={teamChartData} 
+                                                          options={teamChartOptions} 
+                                                          onClick={({ datasetIndex, index }) => {
+                                                              const isCollected = datasetIndex === 0;
+                                                              const shortTeamName = teamChartData.labels[index];
+                                                              const fullTeamName = allActiveTeams.find(t => shortenName(t) === shortTeamName);
+                                                              handleChartDrillDown({ team: [fullTeamName], status: getStatusesForDrillDown(isCollected) });
+                                                          }}
+                                                      />
+                                                  ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
                                               </div>
                                           </div>
                                       </div>
 
-                                      {/* กราฟไม่ระบุทีม (1 ส่วน) - แยกตาม Status จริง */}
-                                      <div className="lg:col-span-1 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200">
-                                          <div className="flex justify-between items-center mb-4">
-                                              <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-amber-600">
-                                                  <i className="fa-solid fa-layer-group"></i> สถานะงานค้าง (ไม่ระบุทีม)
-                                              </h3>
+                                      <div className="lg:col-span-1 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+                                          <div className="flex justify-between items-start mb-4">
+                                              <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-amber-600"><i className="fa-solid fa-layer-group"></i> Pending Tasks Status</h3>
+                                              <div className="bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg shadow-sm flex flex-col items-center shrink-0 ml-2 cursor-pointer hover:bg-amber-100 transition-colors" onClick={() => handleChartDrillDown({ team: ['ไม่ระบุทีม'] })}>
+                                                  <span className="text-lg font-black text-amber-700 leading-none">{totalPendingCount}</span>
+                                                  <span className="text-[10px] font-bold text-amber-600 uppercase">CIDs</span>
+                                              </div>
                                           </div>
                                           <div className="relative h-64 md:h-80 w-full">
-                                              {chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={unassignedChartData} options={unassignedChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                              {chartFilteredTasks?.length > 0 ? (
+                                                  <ChartComponent 
+                                                      type="bar" 
+                                                      data={unassignedChartData} 
+                                                      options={unassignedChartOptions} 
+                                                      onClick={({ datasetIndex }) => {
+                                                          const clickedStatus = unassignedChartData.datasets[datasetIndex].label;
+                                                          handleChartDrillDown({ team: ['ไม่ระบุทีม'], status: [clickedStatus] });
+                                                      }}
+                                                  />
+                                              ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
                                           </div>
                                       </div>
                                   </>
                               ) : (
-                                  /* มุมมอง Subcontract ปกติ */
                                   <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 h-full">
-                                      <div className="flex justify-between items-center mb-4">
-                                          <h3 className="text-base md:text-lg font-bold flex items-center gap-2">
-                                              <i className="fa-solid fa-users text-blue-600"></i> ปริมาณงานและสถานะแยกตามทีม
-                                          </h3>
+                                      <div className="flex justify-between items-start mb-4">
+                                          <div className="flex items-center gap-2">
+                                              <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-users text-blue-600"></i> Tasks & Status by Team</h3>
+                                          </div>
+                                          <div className="bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg shadow-sm flex flex-col items-center shrink-0 ml-2 cursor-pointer hover:bg-blue-100 transition-colors" onClick={() => handleChartDrillDown({ team: allActiveTeams })}>
+                                              <span className="text-lg font-black text-blue-700 leading-none">{totalSubconTeamTasks}</span>
+                                              <span className="text-[10px] font-bold text-blue-600 uppercase">Total CIDs</span>
+                                          </div>
                                       </div>
                                       <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
                                           <div className="min-w-[500px] h-full">
-                                              {chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={teamChartData} options={teamChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                              {chartFilteredTasks?.length > 0 ? (
+                                                  <ChartComponent 
+                                                      type="bar" 
+                                                      data={teamChartData} 
+                                                      options={teamChartOptions} 
+                                                      onClick={({ datasetIndex, index }) => {
+                                                          const clickedStatus = teamChartData.datasets[datasetIndex].label;
+                                                          const fullTeamName = teamChartData.labels[index];
+                                                          handleChartDrillDown({ team: [fullTeamName], status: [clickedStatus] });
+                                                      }}
+                                                  />
+                                              ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
                                           </div>
                                       </div>
                                   </div>
                               )}
                           </div>
                           
-                          {/* กราฟเกินกำหนดนัดหมาย (แสดงเฉพาะหน้า Subcontract) */}
                           {dashboardView === 'subcontract' && (
                               <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1">
-                                  <div className="flex justify-between items-center mb-4"><h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> เกินกำหนดนัดหมาย</h3></div>
-                                  <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2"><div className="min-w-[300px] h-full">{chartFilteredTasks?.length > 0 ? <ChartComponent type="bar" data={overdueChartData} options={overdueChartOptions} /> : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}</div></div>
+                                  <div className="flex justify-between items-start mb-4">
+                                      <h3 className="text-base md:text-lg font-bold flex items-center gap-2"><i className="fa-solid fa-triangle-exclamation text-red-600"></i> Overdue Appointments</h3>
+                                      <div className="bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg shadow-sm flex flex-col items-center shrink-0 ml-2 cursor-pointer hover:bg-red-100 transition-colors" onClick={() => handleChartDrillDown({ overdue: ['เกินกำหนด'] })}>
+                                          <span className="text-lg font-black text-red-700 leading-none">{totalOverdue}</span>
+                                          <span className="text-[10px] font-bold text-red-600 uppercase">CIDs</span>
+                                      </div>
+                                  </div>
+                                  <div className="relative h-64 md:h-80 w-full overflow-x-auto custom-scrollbar pb-2">
+                                      <div className="min-w-[300px] h-full">
+                                          {chartFilteredTasks?.length > 0 ? (
+                                              <ChartComponent 
+                                                  type="bar" 
+                                                  data={overdueChartData} 
+                                                  options={overdueChartOptions} 
+                                                  onClick={({ index }) => {
+                                                      const fullTeamName = overdueChartData.labels[index];
+                                                      handleChartDrillDown({ team: [fullTeamName], overdue: ['เกินกำหนด'] });
+                                                  }}
+                                              />
+                                          ) : <p className="text-slate-400 text-center mt-20">ไม่มีข้อมูล</p>}
+                                      </div>
+                                  </div>
                               </div>
                           )}
                       </div>
@@ -2434,18 +2948,30 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                         options={(() => {
                                             const nsTeamCol = getTeamColumnName(nsColumns);
                                             const nsCidCol = nsColumns.find(c => ['cid', 'circuitno'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                                            const nsSiteCol = nsColumns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
                                             if (!nsTeamCol || !nsCidCol) return ['-'];
 
                                             const nsCidMap = {};
                                             nsTasks.forEach(nt => {
-                                                const cid = String(nt[nsCidCol] || '').trim();
-                                                if (cid) nsCidMap[cid] = nt[nsTeamCol];
+                                                const cid = String(nt[nsCidCol] || '').trim().toLowerCase();
+                                                const site = nsSiteCol && nt[nsSiteCol] ? String(nt[nsSiteCol]).trim().toLowerCase() : '';
+                                                if (cid) {
+                                                    if (site) nsCidMap[`${cid}_${site}`] = nt[nsTeamCol];
+                                                    if (!nsCidMap[cid]) nsCidMap[cid] = nt[nsTeamCol];
+                                                }
                                             });
 
                                             const subCidKey = t_getCol(['cid', 'circuitno']);
+                                            const subSiteCol = columns.find(c => ['sitetype', 'site'].some(kw => c ? String(c).toLowerCase().replace(/[\s_]+/g,'').includes(kw) : false)) || '';
+                                            
                                             const regionsInSub = tasks.map(t => {
-                                                const cid = String(t[subCidKey] || '').trim();
-                                                return nsCidMap[cid] || '-';
+                                                const cid = String(t[subCidKey] || '').trim().toLowerCase();
+                                                const site = subSiteCol && t[subSiteCol] ? String(t[subSiteCol]).trim().toLowerCase() : '';
+                                                if (cid) {
+                                                    if (site && nsCidMap[`${cid}_${site}`]) return nsCidMap[`${cid}_${site}`];
+                                                    if (nsCidMap[cid]) return nsCidMap[cid];
+                                                }
+                                                return '-';
                                             });
                                             return [...new Set(regionsInSub)].sort();
                                         })()} 
@@ -2455,6 +2981,59 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     />
                                 </div>
                             )}
+
+                            {/* 🔥 เพิ่มตัวกรองใหม่ 3 ตัว สำหรับหน้า NS */}
+                            {tasksSubTab === 'ns' && (
+                                <>
+                                    <div className="w-[calc(50%-4px)] sm:w-auto">
+                                        <MultiSelect 
+                                            options={(() => {
+                                                const col = t_getCol(['itemcode', 'รหัสอุปกรณ์']);
+                                                return col ? [...new Set((nsTasks || []).map(t => String(t[col] || '').trim()).filter(Boolean))].sort() : [];
+                                            })()} 
+                                            selected={tableFilterItemCode} 
+                                            onChange={setTableFilterItemCode} 
+                                            placeholder="Item Code" 
+                                            searchable={true} // เปิดโหมดค้นหา
+                                        />
+                                    </div>
+                                    <div className="w-[calc(50%-4px)] sm:w-auto">
+                                        <MultiSelect 
+                                            options={(() => {
+                                                const col = t_getCol(['type', 'ประเภท']);
+                                                return col ? [...new Set((nsTasks || []).map(t => String(t[col] || '').trim()).filter(Boolean))].sort() : [];
+                                            })()} 
+                                            selected={tableFilterType} 
+                                            onChange={setTableFilterType} 
+                                            placeholder="Type" 
+                                        />
+                                    </div>
+                                    <div className="w-[calc(50%-4px)] sm:w-auto">
+                                        <MultiSelect 
+                                            options={(() => {
+                                                // คำนวณจำนวนรายการที่มีอยู่จริง (เช่น 1 Ea, 2 Ea, 3 Ea)
+                                                const counts = new Set();
+                                                const grouped = new Map();
+                                                const stCol = t_getCol(['sitetype', 'site']);
+                                                nsTasks.forEach(t => {
+                                                    const cid = t_cidCol ? t[t_cidCol] : '';
+                                                    const st = stCol ? t[stCol] : '';
+                                                    const cleanCid = String(cid).trim();
+                                                    if (!cleanCid || cleanCid === '-' || cleanCid.length < 3) return;
+                                                    const key = `${cleanCid}_${st}`;
+                                                    grouped.set(key, (grouped.get(key) || 0) + 1);
+                                                });
+                                                grouped.forEach(val => counts.add(`${val} Ea`));
+                                                return [...counts].sort((a, b) => parseInt(a) - parseInt(b));
+                                            })()} 
+                                            selected={tableFilterItemQty} 
+                                            onChange={setTableFilterItemQty} 
+                                            placeholder="จำนวนรายการ" 
+                                        />
+                                    </div>
+                                </>
+                            )}
+
                             <div className="ml-auto flex flex-wrap items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto">
                                 {tasksSubTab === 'subcontract' && t_cidCol && (
                                     <button 
@@ -2535,6 +3114,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     // หาชื่อคอลัมน์แบบ Dynamic
                                     const isStatus = col === t_statusCol;
                                     const isTeam = col === t_teamCol;
+                                    const isEquipYear = col === t_equipYearCol; // 🔥 เพิ่มการเช็คว่าเป็นคอลัมน์ปีหรือไม่
                                     const isCid = (col === t_cidCol || col.toLowerCase().includes('cid') || col.toLowerCase().includes('circuit'));
                                     const isOverdue = (col === t_overDueCol || col.includes('นัดหมาย'));
                                     const isStatusChange = col.toLowerCase().includes('status_change');
@@ -2553,6 +3133,10 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                     } else if (isTeam) {
                                         const tColor = getTeamColorStyle(val, masterData);
                                         styleObj = { backgroundColor: tColor.bg, color: tColor.text, border: `1px solid ${tColor.border}`, fontWeight: 'bold' };
+                                    } else if (isEquipYear && cleanVal) {
+                                        // 🔥 เพิ่มการดึงสีสำหรับคอลัมน์ปีอุปกรณ์
+                                        const yColor = getYearColorStyle(cleanVal);
+                                        styleObj = { backgroundColor: yColor.bg, color: yColor.text, border: `1px solid ${yColor.border}`, fontWeight: 'bold' };
                                     } else if (isCid && cleanVal) {
                                         const s = getCleanStatus(task[t_statusCol]);
                                         styleObj = { backgroundColor: getStatusColor(s, 0.1), color: getStatusColor(s, 1), fontWeight: 'bold', border: `1px solid ${getStatusColor(s, 0.2)}` };
@@ -2583,15 +3167,15 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                                         color: styleObj.color, fontWeight: styleObj.fontWeight, display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box', minHeight: '28px', 
                                                         height: (rowHeights && rowHeights[task.id]) ? `${rowHeights[task.id]}px` : 'auto',
                                                         whiteSpace: (isContact || isEquip || isStatusChange || (task._groupDocs && task._groupDocs.length > 1)) ? 'pre-wrap' : (colConfig.mode === 'auto' ? 'nowrap' : 'normal'), 
-                                                        wordBreak: 'break-word', lineHeight: '1.5', overflow: 'visible', textAlign: (isStatus || isTeam || isCid || isOverdue) ? 'center' : 'left'
+                                                        wordBreak: 'break-word', lineHeight: '1.5', overflow: 'visible', textAlign: (isStatus || isTeam || isCid || isOverdue || isEquipYear) ? 'center' : 'left'
                                                     }} 
                                                     onDoubleClick={(e) => handleCellDoubleClick(e, cellId)} 
                                                     onBlur={e => { handleCellChangeTable(task, col, e.target.innerText, (tasksSubTab === 'subcontract' ? columns : nsColumns)); setEditingCell(null); }}
                                                 >
                                                     {val}
                                                 </div>
-                                                {(isStatus || isTeam) && (
-                                                    // 🔥 เพิ่ม z-10 และขยายความกว้าง w-8 เพื่อให้กดติดง่ายขึ้น
+                                                {/* 🔥 เพิ่ม isEquipYear เข้าไปในเงื่อนไขการโชว์ Dropdown */}
+                                                {(isStatus || isTeam || isEquipYear) && (
                                                     <div className="relative w-8 flex-shrink-0 flex items-center justify-center hover:bg-black/10 cursor-pointer border-l border-black/5 z-10">
                                                         <select 
                                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
@@ -2599,11 +3183,18 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                                             onChange={e => handleCellChangeTable(task, col, e.target.value, (tasksSubTab === 'subcontract' ? columns : nsColumns))}
                                                         >
                                                             <option value="" disabled></option>
-                                                            {/* 🔥 บังคับสีตัวเลือกเป็นสีดำพื้นขาวเพื่อให้มองง่าย */}
-                                                            {(isStatus ? (tasksSubTab === 'ns' ? masterData.nsStatuses : masterData.subconStatuses) : (tasksSubTab === 'ns' ? masterData.nsTeams : masterData.teams)).map(opt => {
+                                                            {isStatus && (tasksSubTab === 'ns' ? masterData.nsStatuses : masterData.subconStatuses).map(opt => {
                                                                 const name = typeof opt === 'string' ? opt : opt.name;
                                                                 return <option key={name} value={name} className="text-black bg-white">{name}</option>
                                                             })}
+                                                            {isTeam && (tasksSubTab === 'ns' ? masterData.nsTeams : masterData.teams).map(opt => {
+                                                                const name = typeof opt === 'string' ? opt : opt.name;
+                                                                return <option key={name} value={name} className="text-black bg-white">{name}</option>
+                                                            })}
+                                                            {/* 🔥 สร้างตัวเลือกปี (ปีปัจจุบัน+2 ย้อนหลังไป 15 ปี) */}
+                                                            {isEquipYear && Array.from({length: 15}, (_, i) => new Date().getFullYear() + 2 - i).map(y => (
+                                                                <option key={y} value={y} className="text-black bg-white">{y}</option>
+                                                            ))}
                                                         </select>
                                                         <i className="fa-solid fa-chevron-down text-[8px] opacity-40"></i>
                                                     </div>
