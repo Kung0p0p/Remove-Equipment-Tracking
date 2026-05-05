@@ -318,7 +318,12 @@
             
             const toggleOption = (opt) => { if (selected.includes(opt)) onChange(selected.filter(x => x !== opt)); else onChange([...selected, opt]); };
             
+            // กรองตามคำค้นหา
             const filteredOptions = searchable && searchTerm ? options.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase())) : options;
+            
+            // 🔥 แยกรายการที่ "เลือกแล้ว" กับ "ยังไม่เลือก" ออกจากกัน
+            const selectedItems = filteredOptions.filter(opt => selected.includes(opt));
+            const unselectedItems = filteredOptions.filter(opt => !selected.includes(opt));
 
             return (
                 <div className="relative inline-block text-left w-full md:w-auto" ref={dropdownRef}>
@@ -345,16 +350,32 @@
                             <div className="max-h-[40vh] sm:max-h-60 overflow-y-auto py-2 custom-scrollbar">
                                 <label className="flex items-center px-4 py-2 hover:bg-blue-50 cursor-pointer transition-colors">
                                     <input type="checkbox" checked={selected?.length === 0} onChange={() => { onChange([]); setSearchTerm(""); }} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
-                                    <span className="text-sm font-bold text-slate-800">เลือกทั้งหมด</span>
+                                    <span className="text-sm font-bold text-slate-800">เลือกทั้งหมด / ล้างค่า</span>
                                 </label>
                                 <div className="h-px bg-slate-100 my-1"></div>
-                                {filteredOptions.length > 0 ? filteredOptions.map(opt => (
-                                    <label key={opt} className="flex items-center px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors">
-                                        <input type="checkbox" checked={selected?.includes(opt)} onChange={() => toggleOption(opt)} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
+                                
+                                {/* 🔥 โชว์รายการที่เลือกไว้ด้านบนสุด (ไฮไลท์สีฟ้า) */}
+                                {selectedItems.length > 0 && (
+                                    <div className="mb-1">
+                                        <div className="px-4 py-1 text-[10px] font-bold text-blue-600 bg-blue-50 uppercase tracking-wider">รายการที่เลือกแล้ว</div>
+                                        {selectedItems.map(opt => (
+                                            <label key={`sel-${opt}`} className="flex items-center px-4 py-2 bg-blue-50/30 hover:bg-blue-50 cursor-pointer transition-colors">
+                                                <input type="checkbox" checked={true} onChange={() => toggleOption(opt)} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
+                                                <span className="text-sm font-bold text-blue-800 truncate" title={opt}>{opt}</span>
+                                            </label>
+                                        ))}
+                                        <div className="h-px bg-slate-100 my-1"></div>
+                                    </div>
+                                )}
+
+                                {/* รายการที่ยังไม่ได้เลือก */}
+                                {unselectedItems.length > 0 ? unselectedItems.map(opt => (
+                                    <label key={`unsel-${opt}`} className="flex items-center px-4 py-2 hover:bg-slate-50 cursor-pointer transition-colors">
+                                        <input type="checkbox" checked={false} onChange={() => toggleOption(opt)} className="mr-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" />
                                         <span className="text-sm text-slate-600 truncate" title={opt}>{opt}</span>
                                     </label>
                                 )) : (
-                                    <div className="px-4 py-3 text-xs text-slate-400 text-center">ไม่พบข้อมูลที่ค้นหา</div>
+                                    selectedItems.length === 0 && <div className="px-4 py-3 text-xs text-slate-400 text-center">ไม่พบข้อมูลที่ค้นหา</div>
                                 )}
                             </div>
                         </div>
@@ -1230,6 +1251,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
           const [tableFilterItemCode, setTableFilterItemCode] = useState([]);
           const [tableFilterItemQty, setTableFilterItemQty] = useState([]);
           const [tableFilterType, setTableFilterType] = useState([]);
+          const [tableFilterSiteType, setTableFilterSiteType] = useState([]); // 🔥 เพิ่ม Site Type
 
           const [tooltipData, setTooltipData] = useState({ visible: false, task: null, x: 0, y: 0 });
           const [colWidths, setColWidths] = useState({}); 
@@ -1540,7 +1562,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               setTableFilterDate([]); setTableFilterYear([]); setTableFilterStatus([]);
               setTableFilterOverdue([]); setSortConfig({ key: null, direction: null });
               setTableFilterRegionRespon([]); 
-              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);
+              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);setTableFilterSiteType([]);
               setVisibleRows(100);
               setShowDuplicatesOnly(false);
           };
@@ -1721,7 +1743,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               setFilterMonth('All'); setFilterTeams([]); setSearchTerm(''); 
               setTableFilterTeams([]); setTableFilterDate([]); setTableFilterYear([]); 
               setTableFilterStatus([]); setTableFilterOverdue([]); setTableFilterRegionRespon([]);
-              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);
+              setTableFilterItemCode([]); setTableFilterItemQty([]); setTableFilterType([]);setTableFilterSiteType([]);
               setVisibleRows(100); setShowDuplicatesOnly(false);
 
               if (filters.status) setTableFilterStatus(filters.status);
@@ -1898,11 +1920,18 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
               }
 
               if (tasksSubTab === 'ns') {
+                  // 🔥 4. กรอง ITEMCODE, Site Type และ Type (แยกกันเด็ดขาด)
                   const t_itemCodeCol = t_getCol(['itemcode', 'รหัสอุปกรณ์']);
-                  const t_typeCol = t_getCol(['type', 'ประเภท']);
+                  // หา Site Type โดยต้องมีคำว่า site
+                  const t_siteTypeCol = (currentColumnsTable || []).find(c => { const lc = c ? String(c).toLowerCase().replace(/[\s_]+/g, '') : ''; return lc === 'sitetype' || lc === 'site'; }) || '';
+                  // หา Type โดยต้องไม่มีคำว่า site
+                  const t_typeCol = (currentColumnsTable || []).find(c => { const lc = c ? String(c).toLowerCase().replace(/[\s_]+/g, '') : ''; return (lc === 'type' || lc === 'ประเภท') && lc !== 'sitetype'; }) || '';
 
                   if (tableFilterItemCode?.length > 0 && t_itemCodeCol) {
                       processedTasks = processedTasks.filter(t => tableFilterItemCode.includes(String(t[t_itemCodeCol] || '').trim()));
+                  }
+                  if (tableFilterSiteType?.length > 0 && t_siteTypeCol) {
+                      processedTasks = processedTasks.filter(t => tableFilterSiteType.includes(String(t[t_siteTypeCol] || '').trim()));
                   }
                   if (tableFilterType?.length > 0 && t_typeCol) {
                       processedTasks = processedTasks.filter(t => tableFilterType.includes(String(t[t_typeCol] || '').trim()));
@@ -2872,6 +2901,7 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                 </div>
                             )}
 
+                            {/* 🔥 เพิ่มตัวกรองใหม่ 4 ตัว สำหรับหน้า NS */}
                             {tasksSubTab === 'ns' && (
                                 <>
                                     <div className="w-[calc(50%-4px)] sm:w-auto">
@@ -2882,14 +2912,25 @@ ${equipments.map((e, i) => `${i + 1}. ${e.name || 'อุปกรณ์'} [ SN:
                                             })()} 
                                             selected={tableFilterItemCode} 
                                             onChange={setTableFilterItemCode} 
-                                            placeholder="Item Code" 
+                                            placeholder="ITEMCODE" 
                                             searchable={true} 
                                         />
                                     </div>
                                     <div className="w-[calc(50%-4px)] sm:w-auto">
                                         <MultiSelect 
                                             options={(() => {
-                                                const col = t_getCol(['type', 'ประเภท']);
+                                                const col = (nsColumns || []).find(c => { const lc = c ? String(c).toLowerCase().replace(/[\s_]+/g, '') : ''; return lc === 'sitetype' || lc === 'site'; }) || '';
+                                                return col ? [...new Set((nsTasks || []).map(t => String(t[col] || '').trim()).filter(Boolean))].sort() : [];
+                                            })()} 
+                                            selected={tableFilterSiteType} 
+                                            onChange={setTableFilterSiteType} 
+                                            placeholder="Site Type" 
+                                        />
+                                    </div>
+                                    <div className="w-[calc(50%-4px)] sm:w-auto">
+                                        <MultiSelect 
+                                            options={(() => {
+                                                const col = (nsColumns || []).find(c => { const lc = c ? String(c).toLowerCase().replace(/[\s_]+/g, '') : ''; return (lc === 'type' || lc === 'ประเภท') && lc !== 'sitetype'; }) || '';
                                                 return col ? [...new Set((nsTasks || []).map(t => String(t[col] || '').trim()).filter(Boolean))].sort() : [];
                                             })()} 
                                             selected={tableFilterType} 
